@@ -1,16 +1,12 @@
 const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, source: null, timelineTimer: null, historical: false, defaults: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
-const canvas = $('#worldCanvas');
-const context = canvas.getContext('2d');
-const assets = { grass: loadImage('/assets/terrain-grass.png'), rock: loadImage('/assets/terrain-rock.png'), tree: loadImage('/assets/terrain-tree.png'), food: loadImage('/assets/food-cache.png'), peon: loadImage('/assets/peon-topdown.png') };
-Promise.all(Object.values(assets).map(asset => asset.ready)).then(render);
-
-function loadImage(source) {
-    const image = new Image();
-    const ready = new Promise(resolve => { image.onload = resolve; image.onerror = resolve; });
-    image.src = source;
-    return { image, ready };
-}
+const viewport = $('#worldViewport');
+const pixiApp = new PIXI.Application();
+await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
+viewport.appendChild(pixiApp.canvas);
+const canvas = pixiApp.canvas;
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', peon:'/assets/peon-topdown.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
     state.zoom = state.defaultZoom; state.panX = 0; state.panY = 0;
@@ -92,8 +88,10 @@ function connectStream(worldId) {
         if (['PEON_TURN_COMPLETED', 'WORLD_FINISHED'].includes(data.eventType)) {
             state.liveWorld = await api(`/api/worlds/${worldId}`);
             if (!state.historical) state.world = state.liveWorld;
+            render();
+            if (!state.historical && data.eventType === 'PEON_TURN_COMPLETED') playActionAnimations(state.events.filter(item => item.sequenceNumber === data.sequenceNumber));
+            return;
         }
-        render();
     });
 }
 
@@ -125,7 +123,7 @@ function render() {
     if (!world) {
         $('#analysisButton').disabled = true;
         $('#openWorldJournalButton').disabled = true;
-        const rect=resizeCanvas(); context.clearRect(0,0,rect.width,rect.height);
+        clearWorldStage();
         $('#statusBadge').textContent = 'État : —';
         $('#roundValue').textContent = '—';
         $('#sequenceValue').textContent = '—';
@@ -184,13 +182,24 @@ function renderPopulationStatistics(world) {
 
 function friendlyWorldStatus(status) { return ({ CREATED:'Prêt', RUNNING:'En cours', PAUSED:'En pause', FINISHED:'Terminé' })[status] || status; }
 
-function resizeCanvas() {
-    const ratio = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * ratio));
-    canvas.height = Math.max(1, Math.round(rect.height * ratio));
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+function resizeRenderer() {
+    const rect = viewport.getBoundingClientRect();
+    pixiApp.renderer.resize(Math.max(1, rect.width), Math.max(1, rect.height));
     return rect;
+}
+
+function clearWorldStage() {
+    cancelAnimations();
+    pixiApp.stage.removeChildren().forEach(child => child.destroy({ children:true }));
+    pixiApp.render();
+}
+
+function cancelAnimations() {
+    animationState.generation++;
+    animationState.animations = [];
+    animationState.peons.clear();
+    if (animationState.frame !== null) cancelAnimationFrame(animationState.frame);
+    animationState.frame = null;
 }
 
 function geometry(world, rect) {
@@ -210,13 +219,14 @@ function geometry(world, rect) {
 }
 
 function centerOf(coordinate, geo) { return { x: geo.offsetX + geo.size * 1.5 * coordinate.q, y: geo.offsetY + geo.size * Math.sqrt(3) * (coordinate.r + coordinate.q / 2) }; }
-function hexPath(x, y, size) { context.beginPath(); for (let i = 0; i < 6; i++) { const angle = Math.PI / 180 * (60 * i); const px = x + size * Math.cos(angle); const py = y + size * Math.sin(angle); i ? context.lineTo(px, py) : context.moveTo(px, py); } context.closePath(); }
+function hexPoints(size) { return Array.from({ length:6 }, (_, index) => { const angle = Math.PI / 3 * index; return [size * Math.cos(angle), size * Math.sin(angle)]; }).flat(); }
 
 function drawWorld() {
     const world = state.world;
-    const rect = resizeCanvas();
-    context.clearRect(0, 0, rect.width, rect.height);
-    if (!world) return;
+    const rect = resizeRenderer();
+    cancelAnimations();
+    pixiApp.stage.removeChildren().forEach(child => child.destroy({ children:true }));
+    if (!world) { pixiApp.render(); return; }
     const geo = geometry(world, rect);
     const selected = world.peons[state.selectedPeonId];
     const mental = $('#mentalMapToggle').checked && selected ? selected.mentalMap : null;
@@ -224,9 +234,7 @@ function drawWorld() {
         const known = !mental || mental[`${cell.coordinate.q}:${cell.coordinate.r}`];
         const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, occupantPeonIds: known.rememberedOccupants } : cell;
         const point = centerOf(cell.coordinate, geo);
-        if (!known) { hexPath(point.x, point.y, geo.size - .35); context.fillStyle = '#0c0f0c'; context.fill(); }
-        else { drawTexturedCell(rendered, point, geo); }
-        context.strokeStyle = !known ? '#151915' : '#73806955'; context.lineWidth = .6; context.stroke();
+        drawCell(rendered, point, geo, Boolean(known));
         if (known && rendered.foodQuantity > 0) { drawFood(rendered, point, geo); }
     });
     if (!mental) Object.values(world.peons).filter(peon => peon.alive).forEach(peon => drawPeon(peon, world, geo));
@@ -234,7 +242,8 @@ function drawWorld() {
         drawRememberedPeons(selected, world, geo);
         drawPeon(selected, world, geo);
     }
-    canvas._geometry = geo;
+    viewport._geometry = geo;
+    pixiApp.render();
 }
 
 function rememberedPeonPresentations(selected) {
@@ -263,35 +272,27 @@ function drawRememberedPeons(selected, world, geo) {
     }));
 }
 
-function drawTexturedCell(cell, point, geo) {
-    const asset = cell.terrain === 'ROCK' ? assets.rock.image : cell.terrain === 'TREE' ? assets.tree.image : assets.grass.image;
-    hexPath(point.x, point.y, geo.size - .35);
-    context.save(); context.clip();
-    if (asset.complete && asset.naturalWidth) {
-        const crop = Math.min(360, asset.naturalWidth, asset.naturalHeight);
-        const hash = Math.abs((cell.coordinate.q * 73856093) ^ (cell.coordinate.r * 19349663));
-        const sx = hash % Math.max(1, asset.naturalWidth - crop);
-        const sy = Math.floor(hash / 97) % Math.max(1, asset.naturalHeight - crop);
-        context.drawImage(asset, sx, sy, crop, crop, point.x - geo.size, point.y - geo.size, geo.size * 2, geo.size * 2);
-        context.fillStyle = cell.terrain === 'ROCK' ? '#1112' : cell.terrain === 'TREE' ? '#07180720' : '#17320d18'; context.fillRect(point.x - geo.size, point.y - geo.size, geo.size * 2, geo.size * 2);
-    } else {
-        context.fillStyle = cell.terrain === 'ROCK' ? '#4a4d48' : cell.terrain === 'TREE' ? '#254425' : '#526847'; context.fillRect(point.x - geo.size, point.y - geo.size, geo.size * 2, geo.size * 2);
-    }
-    context.restore(); hexPath(point.x, point.y, geo.size - .35);
+function drawCell(cell, point, geo, known) {
+    const texture = cell.terrain === 'ROCK' ? assets.rock : cell.terrain === 'TREE' ? assets.tree : assets.grass;
+    const fill = known ? { texture, textureSpace:'local', color:cell.terrain === 'ROCK' ? '#dddddd' : '#e8ffe1' } : '#0c0f0c';
+    const cellGraphic = new PIXI.Graphics().poly(hexPoints(geo.size - .35)).fill(fill).stroke({ color:known ? '#738069' : '#151915', alpha:known ? .34 : 1, width:.6 });
+    cellGraphic.position.set(point.x, point.y);
+    pixiApp.stage.addChild(cellGraphic);
 }
 
 function drawFood(cell, point, geo) {
-    const image = assets.food.image;
     const quantityScale = .72 + Math.min(cell.foodQuantity, 4) * .08;
     const size = geo.size * quantityScale;
-    if (image.complete && image.naturalWidth) { context.drawImage(image, point.x - size / 2, point.y - size / 2, size, size); }
-    else { context.beginPath(); context.fillStyle = '#f1c75b'; context.arc(point.x, point.y, Math.max(1.2, geo.size * .18), 0, Math.PI * 2); context.fill(); }
-    if (geo.size > 10) { context.fillStyle = '#fff'; context.font = `700 ${Math.max(7, geo.size * .32)}px sans-serif`; context.textAlign = 'center'; context.fillText(cell.foodQuantity, point.x + size * .32, point.y + size * .34); }
+    const sprite = new PIXI.Sprite(assets.food);
+    sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+    pixiApp.stage.addChild(sprite);
+    if (geo.size > 10) {
+        const label = new PIXI.Text({ text:String(cell.foodQuantity), style:{ fill:'#ffffff', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#17120a', width:2 } } });
+        label.anchor.set(.5); label.position.set(point.x + size * .32, point.y + size * .34); pixiApp.stage.addChild(label);
+    }
 }
 
 function drawPeon(peon, world, geo, presentation = {}) {
-    context.save();
-    if (presentation.remembered) context.globalAlpha = .48;
     const position = presentation.position || peon.position;
     const point = centerOf(position, geo);
     const team = world.teams[peon.teamId];
@@ -303,14 +304,162 @@ function drawPeon(peon, world, geo, presentation = {}) {
     const x = point.x + Math.cos(angle) * spread;
     const y = point.y + Math.sin(angle) * spread;
     const spriteHeight = Math.max(6, geo.size * 1.28); const spriteWidth = spriteHeight * .72;
-    context.beginPath(); context.ellipse(x, y + spriteHeight * .25, spriteWidth * .43, spriteHeight * .28, 0, 0, Math.PI * 2); context.fillStyle = `${team?.color || '#ddd'}cc`; context.fill();
-    if (!presentation.remembered && peon.id === state.selectedPeonId) { context.lineWidth = Math.max(1, geo.size * .09); context.strokeStyle = '#fff'; context.stroke(); }
-    if (presentation.remembered) { context.setLineDash([2, 2]); context.lineWidth = Math.max(1, geo.size * .07); context.strokeStyle = presentation.relation === 'ENEMY' ? '#ff6666' : presentation.relation === 'ALLY' ? '#7fdb86' : '#f4d58a'; context.stroke(); context.setLineDash([]); }
-    const image = assets.peon.image;
-    if (image.complete && image.naturalWidth) { context.drawImage(image, x - spriteWidth / 2, y - spriteHeight * .62, spriteWidth, spriteHeight); }
-    else { context.beginPath(); context.arc(x, y, Math.max(2, geo.size * .28), 0, Math.PI * 2); context.fillStyle = team?.color || '#eee'; context.fill(); }
-    if (!presentation.remembered && geo.size > 9) { const barWidth = spriteWidth; context.fillStyle = '#180d0d'; context.fillRect(x - barWidth / 2, y - spriteHeight * .7, barWidth, 2); context.fillStyle = '#df5b5b'; context.fillRect(x - barWidth / 2, y - spriteHeight * .7, barWidth * peon.healthPoints / peon.maxHealthPoints, 2); }
-    context.restore();
+    const relationColor = presentation.relation === 'ENEMY' ? '#ff6666' : presentation.relation === 'ALLY' ? '#7fdb86' : '#f4d58a';
+    const peonContainer = new PIXI.Container();
+    peonContainer.position.set(x, y);
+    peonContainer.alpha = presentation.remembered ? .48 : 1;
+    const marker = new PIXI.Graphics().ellipse(0, spriteHeight * .25, spriteWidth * .43, spriteHeight * .28).fill({ color:team?.color || '#dddddd', alpha:.8 });
+    if (!presentation.remembered && peon.id === state.selectedPeonId) marker.stroke({ color:'#ffffff', width:Math.max(1, geo.size * .09) });
+    if (presentation.remembered) marker.stroke({ color:relationColor, width:Math.max(1, geo.size * .07) });
+    peonContainer.addChild(marker);
+    const sprite = new PIXI.Sprite(assets.peon);
+    sprite.anchor.set(.5, .62); sprite.width = spriteWidth; sprite.height = spriteHeight;
+    peonContainer.addChild(sprite);
+    if (!presentation.remembered && geo.size > 9) {
+        const barWidth = spriteWidth;
+        const healthBar = new PIXI.Graphics().rect(-barWidth / 2, -spriteHeight * .7, barWidth, 2).fill('#180d0d').rect(-barWidth / 2, -spriteHeight * .7, barWidth * peon.healthPoints / peon.maxHealthPoints, 2).fill('#df5b5b');
+        peonContainer.addChild(healthBar);
+    }
+    pixiApp.stage.addChild(peonContainer);
+    if (!presentation.remembered) animationState.peons.set(peon.id, peonContainer);
+}
+
+function playActionAnimations(events) {
+    if (animationState.reducedMotion || !viewport._geometry || !events.length) return;
+    const moved = events.some(event => event.eventType === 'PEON_MOVED');
+    events.forEach(event => {
+        const delay = moved && event.eventType === 'PEON_SAW' ? 300 : 0;
+        if (event.eventType === 'PEON_MOVED') animateMovement(event);
+        if (event.eventType === 'PEON_ATE') animateEating(event);
+        if (event.eventType === 'PEON_COMMUNICATED') animateCommunication(event);
+        if (event.eventType === 'PEON_SAW') animateObservation(event, delay);
+        if (event.eventType === 'PEON_ATTACKED') animateAttack(event);
+        if (event.eventType === 'PEON_LEVELED_UP') animateLevelUp(event);
+    });
+}
+
+function queueAnimation(duration, delay, update, complete = () => {}) {
+    animationState.animations.push({ duration, delay, update, complete, startedAt:null });
+    if (animationState.frame === null) animationState.frame = requestAnimationFrame(runAnimations);
+}
+
+function runAnimations(timestamp) {
+    animationState.animations = animationState.animations.filter(animation => {
+        if (animation.startedAt === null) animation.startedAt = timestamp;
+        const elapsed = timestamp - animation.startedAt - animation.delay;
+        if (elapsed < 0) return true;
+        const progress = Math.min(1, elapsed / animation.duration);
+        animation.update(progress);
+        if (progress < 1) return true;
+        animation.complete();
+        return false;
+    });
+    pixiApp.render();
+    animationState.frame = animationState.animations.length ? requestAnimationFrame(runAnimations) : null;
+}
+
+function removeEffect(effect) {
+    if (effect.parent) effect.parent.removeChild(effect);
+    effect.destroy({ children:true });
+}
+
+function animateMovement(event) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor || !event.payload?.from || !event.payload?.to) return;
+    const from = centerOf(event.payload.from, viewport._geometry);
+    const to = centerOf(event.payload.to, viewport._geometry);
+    const final = { x:actor.x, y:actor.y };
+    const start = { x:final.x + from.x - to.x, y:final.y + from.y - to.y };
+    actor.position.set(start.x, start.y);
+    queueAnimation(430, 0, progress => {
+        const eased = 1 - Math.pow(1 - progress, 3);
+        actor.position.set(start.x + (final.x - start.x) * eased, start.y + (final.y - start.y) * eased);
+        actor.scale.set(1 + Math.sin(progress * Math.PI * 4) * .06);
+    }, () => { actor.position.set(final.x, final.y); actor.scale.set(1); });
+}
+
+function animateEating(event) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor) return;
+    const glow = new PIXI.Graphics().circle(0, 0, Math.max(5, viewport._geometry.size * .55)).fill({ color:'#f5c451', alpha:.38 }).stroke({ color:'#fff2a6', width:2 });
+    actor.addChildAt(glow, 0);
+    queueAnimation(500, 0, progress => {
+        const pulse = Math.sin(progress * Math.PI);
+        glow.scale.set(.45 + progress * 1.25); glow.alpha = (1 - progress) * .75;
+        actor.scale.set(1 + pulse * .22);
+    }, () => { actor.scale.set(1); removeEffect(glow); });
+}
+
+function animateCommunication(event) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor) return;
+    const rings = new PIXI.Container();
+    [0, 1, 2].forEach(index => rings.addChild(new PIXI.Graphics().circle(0, 0, Math.max(4, viewport._geometry.size * .45)).stroke({ color:'#62d8ff', width:2, alpha:.9 - index * .2 })));
+    actor.addChildAt(rings, 0);
+    queueAnimation(540, 0, progress => {
+        rings.children.forEach((ring, index) => { const local = Math.max(0, Math.min(1, progress * 1.65 - index * .24)); ring.scale.set(.5 + local * 2.6); ring.alpha = local > 0 ? 1 - local : 0; });
+    }, () => removeEffect(rings));
+}
+
+function animateObservation(event, delay = 0) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor) return;
+    const peon = state.world?.peons?.[event.peonId];
+    const radius = Math.max(8, viewport._geometry.size * (peon?.level || 1) * 1.7);
+    const sight = new PIXI.Graphics().circle(0, 0, radius).fill({ color:'#d8f5b2', alpha:.08 }).stroke({ color:'#d8f5b2', width:1.5, alpha:.7 });
+    sight.scale.set(.12); sight.alpha = 0; actor.addChildAt(sight, 0);
+    queueAnimation(280, delay, progress => { const eased = 1 - Math.pow(1 - progress, 2); sight.scale.set(.12 + eased * .88); sight.alpha = Math.sin(progress * Math.PI) * .72; }, () => removeEffect(sight));
+}
+
+function animateAttack(event) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor) return;
+    const target = animationState.peons.get(event.payload?.targetPeonId);
+    const slash = new PIXI.Graphics().moveTo(-viewport._geometry.size * .55, viewport._geometry.size * .55).lineTo(viewport._geometry.size * .55, -viewport._geometry.size * .55).stroke({ color:'#fff0d0', width:Math.max(2, viewport._geometry.size * .16) });
+    slash.alpha = 0; actor.addChild(slash);
+    const actorOrigin = { x:actor.x, y:actor.y };
+    const targetOrigin = target ? { x:target.x, y:target.y } : null;
+    queueAnimation(460, 0, progress => {
+        const strike = Math.sin(progress * Math.PI);
+        actor.x = actorOrigin.x + strike * viewport._geometry.size * .32;
+        actor.rotation = strike * .16;
+        slash.alpha = Math.sin(progress * Math.PI) * .95;
+        slash.scale.set(.45 + progress * .8);
+        if (target && targetOrigin) target.x = targetOrigin.x + Math.sin(progress * Math.PI * 8) * viewport._geometry.size * .12 * (1 - progress);
+    }, () => {
+        actor.position.set(actorOrigin.x, actorOrigin.y); actor.rotation = 0;
+        if (target && targetOrigin) target.position.set(targetOrigin.x, targetOrigin.y);
+        removeEffect(slash);
+    });
+}
+
+function animateLevelUp(event) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor) return;
+    const size = viewport._geometry.size;
+    const celebration = new PIXI.Container();
+    const aura = new PIXI.Graphics().circle(0, 0, Math.max(7, size * .72)).fill({ color:'#f6c453', alpha:.24 }).stroke({ color:'#ffe79a', width:2.2, alpha:.95 });
+    const innerRing = new PIXI.Graphics().circle(0, 0, Math.max(4, size * .4)).stroke({ color:'#fff7c7', width:1.4, alpha:.9 });
+    const rays = new PIXI.Graphics();
+    for (let index = 0; index < 10; index++) {
+        const angle = index * Math.PI * 2 / 10;
+        rays.moveTo(Math.cos(angle) * size * .78, Math.sin(angle) * size * .78).lineTo(Math.cos(angle) * size * 1.3, Math.sin(angle) * size * 1.3);
+    }
+    rays.stroke({ color:'#ffd65c', width:Math.max(1, size * .09), alpha:.9 });
+    const levelLabel = new PIXI.Text({ text:`NIVEAU ${event.payload?.levelAfter ?? ''}`, style:{ fill:'#fff1a8', fontFamily:'Georgia, serif', fontSize:Math.max(9, size * .55), fontWeight:'700', stroke:{ color:'#4d3000', width:3 }, dropShadow:{ color:'#000000', alpha:.65, blur:2, distance:2 } } });
+    levelLabel.anchor.set(.5); levelLabel.y = -size * 1.2;
+    celebration.addChild(aura, innerRing, rays, levelLabel);
+    celebration.scale.set(.2); celebration.alpha = 0; actor.addChild(celebration);
+    queueAnimation(560, 0, progress => {
+        const arrival = 1 - Math.pow(1 - Math.min(1, progress * 2.2), 3);
+        celebration.scale.set(.2 + arrival * .95);
+        celebration.alpha = Math.min(1, progress * 5) * (1 - Math.max(0, progress - .72) / .28);
+        celebration.rotation = progress * .22;
+        rays.rotation = -progress * .9;
+        aura.scale.set(1 + Math.sin(progress * Math.PI * 3) * .12);
+        levelLabel.y = -size * (1.2 + progress * .8);
+        levelLabel.rotation = -celebration.rotation;
+    }, () => removeEffect(celebration));
 }
 
 function renderPeon() {
@@ -381,6 +530,7 @@ function eventDescription(event) {
         case 'PEON_ATTACKED': return `${peonName(event.peonId)} attaque ${peonName(payload.targetPeonId)} : ${payload.damage} dégâts, PV ${payload.healthBefore} → ${payload.healthAfter}.`;
         case 'PEON_EXPERIENCE_GAINED': return `+${payload.amount} XP, total : ${payload.experienceAfter} XP.`;
         case 'PEON_LEVELED_UP': return `Niveau ${payload.levelBefore} → ${payload.levelAfter} · PV max ${payload.maxHealthBefore} → ${payload.maxHealthAfter} · dégâts ${payload.attackDamageBefore} → ${payload.attackDamageAfter}.`;
+        case 'PEON_LEVEL_UP_HEAL_APPLIED': return `Soin de niveau : PV ${payload.healthBefore} → ${payload.healthAfter}/${payload.maxHealthPoints}.`;
         case 'PEON_HUNGER_APPLIED': return `Faim : −${payload.loss} PV, ${payload.healthBefore} → ${payload.healthAfter}.`;
         case 'PEON_MOVEMENT_COST_APPLIED': return `Effort du déplacement : −${payload.loss} PV, ${payload.healthBefore} → ${payload.healthAfter}.`;
         case 'PEON_DIED': return `Mort causée par ${friendlyReason(payload.reason)} en ${coordinate(payload.position)}.`;
@@ -394,7 +544,7 @@ function eventDescription(event) {
     }
 }
 
-function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
+function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
 
 function escapeHtml(value) {
     const element = document.createElement('span');
@@ -412,15 +562,15 @@ function renderAnalysis(report) {
 
 canvas.addEventListener('click', event => {
     if (state.dragMoved) { state.dragMoved = false; return; }
-    if (!state.world || !canvas._geometry) return;
+    if (!state.world || !viewport._geometry) return;
     const rect = canvas.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top;
     const selected = state.world.peons[state.selectedPeonId];
     const mental = $('#mentalMapToggle').checked && selected;
     const candidates = mental
         ? [{ peon:selected, position:selected.position }, ...rememberedPeonPresentations(selected).map(memory => ({ peon:state.world.peons[memory.peonId], position:memory.position })).filter(candidate => candidate.peon)]
         : Object.values(state.world.peons).filter(peon => peon.alive).map(peon => ({ peon, position:peon.position }));
-    const nearest = candidates.map(candidate => ({ peon:candidate.peon, point:centerOf(candidate.position, canvas._geometry) })).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
-    if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < canvas._geometry.size * 1.3) { state.selectedPeonId = nearest.peon.id; render(); }
+    const nearest = candidates.map(candidate => ({ peon:candidate.peon, point:centerOf(candidate.position, viewport._geometry) })).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
+    if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) { state.selectedPeonId = nearest.peon.id; render(); }
 });
 
 canvas.addEventListener('pointerdown', event => { state.dragging = true; state.dragMoved = false; state.dragStart = { x:event.clientX, y:event.clientY, panX:state.panX, panY:state.panY }; canvas.classList.add('dragging'); canvas.setPointerCapture(event.pointerId); });

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Illuvatar — Simulateur de peons</title>
-    <link rel="stylesheet" href="/styles.css?v=20261003-15">
+    <link rel="stylesheet" href="/styles.css?v=20261003-16">
     <link rel="stylesheet" href="/journal.css?v=20261003-15">
 </head>
 <body>
@@ -40,7 +40,7 @@
             <label class="switch"><input id="mentalMapToggle" type="checkbox"><span>Carte mentale</span></label>
         </div>
         <div class="canvas-wrap">
-            <canvas id="worldCanvas"></canvas>
+            <div id="worldViewport" aria-label="Carte du monde rendue avec PixiJS et WebGL"></div>
             <div id="emptyState" class="empty-state">
                 <div class="sigil">⌬</div>
                 <h2>Aucun monde éveillé</h2>
@@ -122,6 +122,7 @@
     <div id="eventLog" class="event-log world-journal-log"></div>
 </dialog>
 
-<script type="module" src="/app.js?v=20261003-15"></script>
+<script src="/vendor/pixi.min.js?v=8.22.0"></script>
+<script type="module" src="/app.js?v=20261003-19"></script>
 </body>
 </html>

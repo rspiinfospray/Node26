@@ -171,6 +171,7 @@ public class Illuvatar {
                     events.add(this.event(world, request, actor, "PEON_DIED", eventIndex, Map.of("reason", "HUNGER", "position", actor.getPosition())));
                 }
             }
+            this.restoreLeveledPeonsToMaximumHealth(world, request, events, eventIndex);
             if (actor.getPendingDecisionAction() != null) { this.learnFromOutcome(world, actor, request, events, eventIndex); }
         }
         world.completeTurn();
@@ -377,6 +378,17 @@ public class Illuvatar {
         int levelBefore = peon.gainExperience(amount, this.defaults.getMaxHealthGainPerLevel(), this.defaults.getAttackDamageGainPerLevel());
         events.add(this.event(world, request, peon, "PEON_EXPERIENCE_GAINED", index, Map.of("amount", amount, "experienceAfter", peon.getExperiencePoints())));
         if (peon.getLevel() > levelBefore) { events.add(this.event(world, request, peon, "PEON_LEVELED_UP", index, Map.of("levelBefore", levelBefore, "levelAfter", peon.getLevel(), "healthBefore", healthBefore, "healthAfter", peon.getHealthPoints(), "maxHealthBefore", maxHealthBefore, "maxHealthAfter", peon.getMaxHealthPoints(), "attackDamageBefore", attackDamageBefore, "attackDamageAfter", peon.getAttackDamage()))); }
+    }
+
+    private void restoreLeveledPeonsToMaximumHealth(World world, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        List<UUID> leveledPeonIds = events.stream().filter(event -> "PEON_LEVELED_UP".equals(event.eventType())).map(SimulationEvent::peonId).filter(java.util.Objects::nonNull).distinct().toList();
+        for (UUID peonId : leveledPeonIds) {
+            Peon peon = world.getPeons().get(peonId);
+            if (peon == null || !peon.isAlive()) { continue; }
+            int healthBefore = peon.getHealthPoints();
+            peon.setHealthPoints(peon.getMaxHealthPoints());
+            events.add(this.event(world, request, peon, "PEON_LEVEL_UP_HEAL_APPLIED", index, Map.of("level", peon.getLevel(), "healthBefore", healthBefore, "healthAfter", peon.getHealthPoints(), "maxHealthPoints", peon.getMaxHealthPoints())));
+        }
     }
 
     private void learnFromOutcome(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {

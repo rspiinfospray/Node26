@@ -1,11 +1,13 @@
 package org.infospray.peonsimulator.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@JsonPropertyOrder({"id", "firstName", "teamId", "maxHealthPoints", "healthPoints"})
 public class Peon {
     private UUID id;
     private String firstName;
