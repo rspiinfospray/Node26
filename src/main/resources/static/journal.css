@@ -1,0 +1,48 @@
+.peon-actions {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+
+.peon-actions .section-label { margin: 0; }
+.peon-action-log { max-height: 210px; margin-top: 7px; overflow: auto; }
+.peon-action { padding: 8px 3px; border-bottom: 1px solid #2a2f2a; }
+.peon-action strong { display: block; color: #d9d1c0; font-size: 11px; }
+.peon-action span { color: #8b857b; font-size: 9px; }
+.peon-action p { margin-top: 3px; color: #aaa397; font-size: 10px; line-height: 1.35; }
+.action-empty { padding: 8px 2px; font-size: 10px; }
+.event span { display: block; margin-top: 2px; line-height: 1.35; }
+.event p { line-height: 1.4; }
+
+.team-population-stats { display: flex; align-items: center; gap: 6px; }
+.team-population { padding: 4px 7px; color: var(--ink); background: #202520; border: 1px solid #343a34; border-left: 3px solid var(--team-color); border-radius: 5px; font-size: 10px; white-space: nowrap; }
+
+.simulation-control { padding: 8px 11px; font-size: 11px; white-space: nowrap; }
+.simulation-control:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+.timeline-title { color: var(--gold); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+.timeline-control { padding: 6px 10px; font-size: 10px; white-space: nowrap; }
+.timeline-control:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.legend .tree { background: url('/assets/terrain-tree.png') center/cover; }
+
+.analysis-dialog { width: min(850px, calc(100vw - 32px)); max-height: 86vh; overflow: auto; }
+.analysis-summary { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 8px; margin: 14px 0; }
+.analysis-stat { padding: 12px; background: #171b17; border: 1px solid var(--line); border-radius: 7px; }
+.analysis-stat span { display: block; color: #8b857b; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.analysis-stat strong { display: block; margin-top: 5px; color: var(--gold); font-size: 20px; }
+.analysis-section { margin-top: 18px; }
+.analysis-section h3 { margin-bottom: 8px; color: #d9d1c0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.analysis-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.analysis-action { padding: 7px 9px; background: #202520; border-radius: 5px; font-size: 11px; }
+.analysis-action strong { color: var(--gold); }
+.analysis-team-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.analysis-team-table th, .analysis-team-table td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+.analysis-team-table th:first-child, .analysis-team-table td:first-child { text-align: left; }
+.analysis-team-name { padding-left: 7px; border-left: 3px solid var(--team-color); }
+.analysis-trends { margin: 0; padding-left: 19px; color: #c4bdae; font-size: 12px; line-height: 1.55; }
+.analysis-error { color: #df8e80; }
+
+@media (max-width: 700px) {
+    .analysis-summary { grid-template-columns: repeat(2, 1fr); }
+    .analysis-team-table { font-size: 9px; }
+}
