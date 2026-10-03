@@ -10,9 +10,29 @@
 .peon-action strong { display: block; color: #d9d1c0; font-size: 11px; }
 .peon-action span { color: #8b857b; font-size: 9px; }
 .peon-action p { margin-top: 3px; color: #aaa397; font-size: 10px; line-height: 1.35; }
+.peon-action em { float: right; color: var(--gold); font-size: 9px; font-style: normal; }
+.peon-action small { display: block; margin-top: 4px; color: #777f74; font-size: 9px; }
 .action-empty { padding: 8px 2px; font-size: 10px; }
+.peon-personality { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.personality-traits { display: grid; gap: 5px; margin-top: 8px; }
+.personality-trait { display: grid; grid-template-columns: 76px 1fr 24px; gap: 6px; align-items: center; font-size: 9px; }
+.personality-trait span { color: #aaa397; }
+.personality-trait > div { height: 5px; overflow: hidden; background: #303530; border-radius: 5px; }
+.personality-trait i { display: block; height: 100%; background: linear-gradient(90deg, #637c55, var(--gold)); }
+.personality-trait strong { color: #d9d1c0; text-align: right; }
+.learning-summary { margin-top: 8px; color: #817b70; font-size: 9px; line-height: 1.4; }
 .event span { display: block; margin-top: 2px; line-height: 1.35; }
 .event p { line-height: 1.4; }
+.journal-button { width: 100%; margin-top: 14px; display: flex; justify-content: space-between; align-items: center; color: var(--gold); }
+.journal-button span { min-width: 28px; padding: 2px 6px; color: var(--ink); background: #303630; border-radius: 10px; font-size: 10px; }
+.world-journal-dialog { width: min(900px, calc(100vw - 32px)); height: min(82vh, 780px); overflow: hidden; }
+.world-journal-dialog[open] { display: flex; flex-direction: column; }
+.world-journal-dialog .dialog-title { flex: 0 0 auto; }
+.world-journal-log { flex: 1; min-height: 0; margin: 0; padding: 0 8px; border-top: 1px solid var(--line); }
+.world-journal-log .event { padding: 12px 7px; }
+.world-journal-log .event strong { font-size: 12px; }
+.world-journal-log .event span { margin-top: 3px; font-size: 10px; }
+.world-journal-log .event p { margin-top: 5px; font-size: 11px; }
 
 .team-population-stats { display: flex; align-items: center; gap: 6px; }
 .team-population { padding: 4px 7px; color: var(--ink); background: #202520; border: 1px solid #343a34; border-left: 3px solid var(--team-color); border-radius: 5px; font-size: 10px; white-space: nowrap; }

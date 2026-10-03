@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public class World {
     private UUID id;
+    private String name;
     private WorldStatus status = WorldStatus.CREATED;
     private int width;
     private int height;
@@ -32,6 +33,7 @@ public class World {
     }
 
     public UUID getId() { return this.id; }
+    public String getName() { return this.name; }
     public WorldStatus getStatus() { return this.status; }
     public int getWidth() { return this.width; }
     public int getHeight() { return this.height; }
@@ -51,6 +53,7 @@ public class World {
     public Map<UUID, Team> getTeams() { return this.teams; }
     public Map<UUID, Peon> getPeons() { return this.peons; }
     public void setId(UUID id) { this.id = id; }
+    public void setName(String name) { this.name = name; }
     public void setStatus(WorldStatus status) { this.status = status; }
     public void setWidth(int width) { this.width = width; }
     public void setHeight(int height) { this.height = height; }

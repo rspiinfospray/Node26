@@ -141,6 +141,7 @@ Ports secondaires proposés :
 ```text
 World
   id
+  name: nom d'affichage, 80 caractères maximum
   status: CREATED | RUNNING | PAUSED | FINISHED
   width: 50 par défaut
   height: 50 par défaut
@@ -159,6 +160,8 @@ World
   teams
   peons
 ```
+
+Le nom du monde est choisi à sa création et est persisté avec son état et ses snapshots. Il doit être unique parmi les mondes existants, sans distinction entre majuscules et minuscules et après suppression des espaces placés au début ou à la fin. Cette règle est contrôlée par le backend ; l'IHM effectue aussi un contrôle immédiat pour guider l'utilisateur. L'IHM peut reprendre la configuration d'un monde existant pour préremplir un nouveau monde : dimensions, terrains, nourriture, faim, durée et composition des deux équipes sont copiés. Le nouveau monde conserve un nom distinct et ne reprend ni l'état courant, ni l'historique, ni la graine du monde source.
 
 `maxRounds` définit la durée maximale de la simulation. Il doit être strictement positif, est configurable à la création du monde et ne peut plus être modifié après son démarrage. Les pourcentages de roche et d'arbres sont configurables et valent respectivement `20 %` et `15 %` par défaut. Leur somme doit rester strictement inférieure à `100 %`. Le générateur vérifie ensuite que toutes les zones praticables importantes sont connectées ; les arbres sont praticables, contrairement aux roches.
 
@@ -269,7 +272,7 @@ Les valeurs exactes restent configurables par monde.
 |---|---|---|
 | `VOIR` | peon vivant | révèle le terrain et le contenu des cases dans le rayon correspondant au niveau, sous réserve de la ligne de vue bloquée par les roches et les arbres ; les occupants d'une case d'arbres ne sont visibles que depuis cette même case |
 | `MANGER` | au moins une unité de nourriture disponible sur la case du peon | consomme exactement une unité, la fait disparaître si la quantité atteint zéro, rend des PV sans dépasser un maximum configurable et donne `20 XP` |
-| `SE_DEPLACER` | case voisine de type plaine ou arbres | change la position même si d'autres peons occupent la destination, marque la case d'arrivée comme visitée, donne `25 XP`, coûte `5 PV`, puis exécute automatiquement `VOIR` depuis la nouvelle position sans consommer un second tour si le peon survit |
+| `SE_DEPLACER` | case voisine de type plaine ou arbres | change la position même si d'autres peons occupent la destination, marque la case d'arrivée comme visitée, donne `5 XP`, coûte `5 PV`, puis exécute automatiquement `VOIR` depuis la nouvelle position sans consommer un second tour si le peon survit |
 | `ATTAQUER` | au moins un autre peon vivant d'une équipe adverse occupe la même case que l'attaquant | cible un ennemi présent sur la même case, lui retire des PV selon les règles de combat et donne `40 XP` à l'attaquant ainsi que `40 XP` au peon attaqué |
 | `COMMUNIQUER` | destinataires alliés à portée | partage une information/perception |
 | `NE_RIEN_FAIRE` | peon vivant | aucun effet ou récupération configurable |
@@ -316,17 +319,25 @@ PeonDecisionContext
 
 `currentPerception` correspond à la dernière perception acquise par le peon et peut avoir vieilli depuis sa dernière action `VOIR` ou son dernier déplacement. La carte mentale distingue toujours les informations observées des informations réelles. Une action peut donc échouer parce que la décision reposait sur un souvenir devenu obsolète ; le moteur ne doit pas consulter l'état réel pour corriger silencieusement son choix.
 
-Les décisions poursuivent trois desseins, dans cet ordre de priorité :
+Les décisions poursuivent trois desseins :
 
 1. `SURVIVRE` : rechercher et manger de la nourriture, se diriger vers une source mémorisée, éviter une situation dangereuse ou se défendre contre un ennemi présent sur la même case.
 2. `GAGNER_DES_NIVEAUX` : privilégier une action valide donnant de l'expérience lorsque la survie immédiate n'est pas menacée, notamment explorer par déplacement ou combattre dans des conditions acceptables.
 
 Face à un ennemi, la décision arbitre explicitement entre le risque pour les PV et les `40 XP` gagnés par une attaque. Un peon dont les PV sont inférieurs ou égaux à `enemyFleeHealthThreshold` (`45` par défaut), ou qui se souvient d'un ennemi nettement plus puissant, choisit une case augmentant leur distance. À partir de `enemyPursuitHealthThreshold` (`70` par défaut), il peut au contraire avancer vers la dernière position connue d'un ennemi de niveau comparable afin de chercher le combat. Sur la même case, il fuit si le risque est trop élevé et attaque sinon, sous réserve de `attackMinimumHealth`.
 
-Chaque niveau gagné augmente les PV maximaux du peon de `maxHealthGainPerLevel` (`10` par défaut) et ses dégâts personnels de `attackDamageGainPerLevel` (`10` par défaut). L'augmentation des PV maximaux ne soigne pas les PV courants. Les attaques utilisent les dégâts propres de l'attaquant et non plus uniquement une valeur globale.
+Chaque niveau gagné augmente les PV maximaux du peon de `maxHealthGainPerLevel` (`10` par défaut) et ses dégâts personnels de `attackDamageGainPerLevel` (`10` par défaut). Lors d'une montée de niveau, ses PV courants sont immédiatement restaurés à leur nouveau maximum. Les attaques utilisent les dégâts propres de l'attaquant et non plus uniquement une valeur globale.
 3. `AIDER_LES_ALLIES` : communiquer une information utile, partager une découverte de nourriture ou transmettre une partie récente de la carte mentale lorsqu'aucun besoin plus prioritaire ne l'empêche.
 
-La première implémentation est un moteur de règles déterministe. Chaque objectif produit des actions candidates à partir du seul `PeonDecisionContext`. Le moteur sélectionne d'abord une action liée au dessein prioritaire applicable, puis départage les actions de même priorité avec un score explicable. En cas d'égalité parfaite, le choix pseudo-aléatoire utilise la graine du monde, le `PeonId` et le `sequenceNumber` afin que la simulation reste reproductible.
+Le moteur utilise une IA utilitaire explicable. Toutes les actions valides sont générées depuis le seul `PeonDecisionContext`, puis reçoivent un score composé de facteurs nommés : survie, expérience, exploration, aide aux alliés, avantage tactique, coût en PV, danger et expérience passée. Les cinq traits personnels (`prudence`, `aggressiveness`, `curiosity`, `solidarity`, `riskAppetite`) modulent ces facteurs. Dans `90 %` des cas par défaut, le meilleur score est choisi ; les `10 %` restants explorent une autre option valide afin d'éviter qu'un peon reste enfermé dans une stratégie médiocre. Le choix pseudo-aléatoire utilise la graine du monde, le `PeonId` et le `sequenceNumber`, donc une simulation reste reproductible.
+
+Les traits opposés ne sont pas générés indépendamment. La prudence initiale est tirée entre `5` et `85`, ce qui permet aux personnalités les moins prudentes d'atteindre jusqu'à `95 %` d'agressivité. La cohérence impose toujours `prudence + aggressiveness <= 100` et `prudence + riskAppetite <= 110`. Une prudence élevée réduit donc mécaniquement l'agressivité et le goût du risque possibles, tandis que curiosité et solidarité restent indépendantes. La même normalisation est appliquée aux anciennes personnalités lors de leur chargement.
+
+Après la résolution réelle de l'action et l'application de la faim, Illuvatar calcule une récompense à partir des variations de PV, d'XP et de cases connues, de la survie, des bénéfices de l'action et d'un éventuel rejet. Chaque peon conserve au maximum `actionHistoryLimit` expériences (`100` par défaut). Il apprend une valeur moyenne par couple `situationKey + actionType` avec la formule `valeur += learningRate × (récompense - valeur)`, où `learningRate` vaut `0.20` par défaut. L'événement `PEON_LEARNED` rend cette leçon observable. L'historique et les valeurs apprises sont personnels : un peon ne connaît pas l'expérience des autres.
+
+Les évaluations de santé utilisent toujours `healthPoints / maxHealthPoints × 100`. Les états sont `PV_CRITIQUES` jusqu'à `20 %`, `PV_FAIBLES` jusqu'à `45 %`, `PV_CORRECTS` sous `80 %`, `PV_ELEVES` sous `100 %`, puis `PV_MAX`. Les seuils de fuite, de poursuite, d'attaque et de recherche de nourriture configurés dans les propriétés sont eux aussi interprétés comme des pourcentages. Les variations de PV utilisées pour l'apprentissage sont normalisées par les PV maximaux.
+
+La fraîcheur de la perception est mesurée en rounds du peon et jamais avec la séquence globale, qui avance lorsque les autres peons jouent. Une observation ou l'observation automatique suivant un déplacement enregistre `lastObservationRound`. Au round personnel suivant, la perception est encore fraîche et `VOIR` reçoit une pénalité ; elle ne commence à gagner un bonus d'ancienneté et de curiosité qu'après au moins un round sans nouvelle observation. Cela empêche les séries artificielles de `VOIR` provoquées par le nombre de peons présents dans le monde.
 
 Exemples de règles initiales :
 
@@ -337,7 +348,7 @@ Exemples de règles initiales :
 - communiquer une information récente à un allié visible si cela ne compromet pas un objectif plus prioritaire ;
 - choisir `VOIR` lorsque les souvenirs locaux sont trop anciens, et `NE_RIEN_FAIRE` si aucune autre action candidate n'est possible.
 
-Chaque choix produit un événement `PeonDecisionMade`, puis une demande `PeonActionRequested` destinée à `Illuvatar`. `PeonDecisionMade` contient l'action et ses paramètres, le dessein retenu, les raisons principales, ainsi que les numéros de séquence des perceptions utilisées. Il ne doit contenir aucune donnée que le peon ne connaissait pas. Après consommation Kafka, l'action est validée contre l'état réel par le domaine sous l'orchestration d'`Illuvatar`, qui peut l'accepter ou produire `PeonActionRejected`.
+Chaque choix produit un événement `PeonDecisionMade`, puis une demande `PeonActionRequested` destinée à `Illuvatar`. `PeonDecisionMade` contient l'action retenue, son score, le contexte généralisé, le détail des facteurs de chaque alternative et l'indication d'un éventuel choix d'exploration. Il ne doit contenir aucune donnée que le peon ne connaissait pas. Après consommation Kafka, l'action est validée contre l'état réel par le domaine sous l'orchestration d'`Illuvatar`, qui peut l'accepter ou produire `PeonActionRejected`.
 
 ## 6. Modèle temporel
 
@@ -414,8 +425,8 @@ Le topic de demandes sépare clairement une intention d'action d'un fait accompl
   "payload": {
     "from": { "q": 3, "r": 7 },
     "to": { "q": 4, "r": 7 },
-    "experienceGained": 25,
-    "experienceAfter": 225,
+    "experienceGained": 5,
+    "experienceAfter": 205,
     "levelAfter": 3
   }
 }
@@ -472,6 +483,7 @@ Exemple minimal de création :
 
 ```json
 {
+  "name": "Terre du Milieu",
   "width": 50,
   "height": 50,
   "rockPercentage": 20,

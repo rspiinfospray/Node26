@@ -1,6 +1,7 @@
 package org.infospray.peonsimulator.domain.model;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -18,6 +19,15 @@ public class Peon {
     private HexCoordinate position;
     private boolean alive = true;
     private Map<String, RememberedCell> mentalMap = new LinkedHashMap<>();
+    private PeonPersonality personality = new PeonPersonality();
+    private List<ActionExperience> actionHistory = new ArrayList<>();
+    private Map<String, ActionKnowledge> learnedActions = new LinkedHashMap<>();
+    private String pendingSituationKey;
+    private ActionType pendingDecisionAction;
+    private int healthBeforeDecision;
+    private int experienceBeforeDecision;
+    private int knownCellsBeforeDecision;
+    private int lastObservationRound;
 
     public Peon() {
     }
@@ -41,6 +51,15 @@ public class Peon {
     public HexCoordinate getPosition() { return this.position; }
     public boolean isAlive() { return this.alive; }
     public Map<String, RememberedCell> getMentalMap() { return this.mentalMap; }
+    public PeonPersonality getPersonality() { return this.personality; }
+    public List<ActionExperience> getActionHistory() { return this.actionHistory; }
+    public Map<String, ActionKnowledge> getLearnedActions() { return this.learnedActions; }
+    public String getPendingSituationKey() { return this.pendingSituationKey; }
+    public ActionType getPendingDecisionAction() { return this.pendingDecisionAction; }
+    public int getHealthBeforeDecision() { return this.healthBeforeDecision; }
+    public int getExperienceBeforeDecision() { return this.experienceBeforeDecision; }
+    public int getKnownCellsBeforeDecision() { return this.knownCellsBeforeDecision; }
+    public int getLastObservationRound() { return this.lastObservationRound; }
     public void setId(UUID id) { this.id = id; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
     public void setTeamId(UUID teamId) { this.teamId = teamId; }
@@ -53,6 +72,15 @@ public class Peon {
     public void setPosition(HexCoordinate position) { this.position = position; }
     public void setAlive(boolean alive) { this.alive = alive; }
     public void setMentalMap(Map<String, RememberedCell> mentalMap) { this.mentalMap = new LinkedHashMap<>(mentalMap); }
+    public void setPersonality(PeonPersonality value) { this.personality = value == null ? new PeonPersonality() : value; }
+    public void setActionHistory(List<ActionExperience> value) { this.actionHistory = value == null ? new ArrayList<>() : new ArrayList<>(value); }
+    public void setLearnedActions(Map<String, ActionKnowledge> value) { this.learnedActions = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setPendingSituationKey(String value) { this.pendingSituationKey = value; }
+    public void setPendingDecisionAction(ActionType value) { this.pendingDecisionAction = value; }
+    public void setHealthBeforeDecision(int value) { this.healthBeforeDecision = value; }
+    public void setExperienceBeforeDecision(int value) { this.experienceBeforeDecision = value; }
+    public void setKnownCellsBeforeDecision(int value) { this.knownCellsBeforeDecision = value; }
+    public void setLastObservationRound(int value) { this.lastObservationRound = value; }
     public void heal(int amount) { this.setHealthPoints(this.healthPoints + amount); }
     public void hurt(int amount) { this.setHealthPoints(this.healthPoints - amount); }
     public int gainExperience(int amount, int maxHealthGainPerLevel, int attackDamageGainPerLevel) {
@@ -62,8 +90,31 @@ public class Peon {
         if (levelsGained > 0) {
             this.setMaxHealthPoints(this.maxHealthPoints + levelsGained * maxHealthGainPerLevel);
             this.setAttackDamage(this.attackDamage + levelsGained * attackDamageGainPerLevel);
+            this.setHealthPoints(this.maxHealthPoints);
         }
         return previous;
+    }
+
+    public void beginDecision(String situationKey, ActionType actionType) {
+        this.pendingSituationKey = situationKey;
+        this.pendingDecisionAction = actionType;
+        this.healthBeforeDecision = this.healthPoints;
+        this.experienceBeforeDecision = this.experiencePoints;
+        this.knownCellsBeforeDecision = this.mentalMap.size();
+    }
+
+    public ActionExperience learnFromDecision(long sequenceNumber, double reward, boolean rejected, double learningRate, int historyLimit) {
+        int healthDelta = this.healthPoints - this.healthBeforeDecision;
+        int experienceDelta = this.experiencePoints - this.experienceBeforeDecision;
+        int knownCellsDelta = this.mentalMap.size() - this.knownCellsBeforeDecision;
+        ActionExperience experience = new ActionExperience(sequenceNumber, this.pendingDecisionAction, this.pendingSituationKey, reward, healthDelta, experienceDelta, knownCellsDelta, rejected, this.alive);
+        this.actionHistory.add(experience);
+        while (this.actionHistory.size() > historyLimit) { this.actionHistory.remove(0); }
+        String knowledgeKey = this.pendingSituationKey + "|" + this.pendingDecisionAction.name();
+        this.learnedActions.computeIfAbsent(knowledgeKey, ignored -> new ActionKnowledge()).learn(reward, learningRate);
+        this.pendingSituationKey = null;
+        this.pendingDecisionAction = null;
+        return experience;
     }
 
     public void remember(Cell cell, boolean visited, long sequence) {

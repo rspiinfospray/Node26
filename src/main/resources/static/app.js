@@ -1,4 +1,4 @@
-const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, source: null, timelineTimer: null, historical: false, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, source: null, timelineTimer: null, historical: false, defaults: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const canvas = $('#worldCanvas');
 const context = canvas.getContext('2d');
@@ -32,12 +32,42 @@ async function api(path, options = {}) {
 
 async function loadWorlds(selectLatest = false) {
     state.worlds = await api('/api/worlds');
-    $('#worldSelect').innerHTML = state.worlds.map(world => `<option value="${world.id}">Monde ${world.id.slice(0, 8)} · ${world.status}</option>`).join('');
+    $('#worldSelect').innerHTML = state.worlds.map(world => `<option value="${world.id}">${escapeHtml(world.name || `Monde ${world.id.slice(0, 8)}`)} · ${world.status}</option>`).join('');
+    renderWorldTemplates();
     if (state.worlds.length) {
         const wanted = selectLatest || !state.world ? state.worlds[0].id : state.world.id;
         $('#worldSelect').value = wanted;
         await selectWorld(wanted);
     } else { render(); }
+}
+
+function renderWorldTemplates() {
+    const select = $('#worldTemplate');
+    if (!select) return;
+    const selected = select.value;
+    select.innerHTML = '<option value="">Configuration par défaut</option>' + state.worlds.map(world => `<option value="${world.id}">${escapeHtml(world.name || `Monde ${world.id.slice(0, 8)}`)}</option>`).join('');
+    if (state.worlds.some(world => world.id === selected)) select.value = selected;
+}
+
+function applyCreationParameters(source) {
+    const form = $('#createForm');
+    const values = source ? {
+        width:source.width, height:source.height, rockPercentage:source.rockPercentage, treePercentage:source.treePercentage,
+        foodCellPercentage:source.foodCellPercentage, minFoodPerCell:source.minFoodPerCell, maxFoodPerCell:source.maxFoodPerCell,
+        maxRounds:source.maxRounds, hungerHealthLossPerTurn:source.hungerHealthLossPerTurn
+    } : {
+        width:state.defaults.worldWidth, height:state.defaults.worldHeight, rockPercentage:state.defaults.rockPercentage,
+        treePercentage:state.defaults.treePercentage, foodCellPercentage:state.defaults.foodCellPercentage,
+        minFoodPerCell:state.defaults.minFoodPerCell, maxFoodPerCell:state.defaults.maxFoodPerCell,
+        maxRounds:state.defaults.maxRounds, hungerHealthLossPerTurn:state.defaults.hungerHealthLossPerTurn
+    };
+    Object.entries(values).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value; });
+    const teams = source ? Object.values(source.teams || {}) : [];
+    const peons = source ? Object.values(source.peons || {}) : [];
+    form.elements.redName.value = teams[0]?.name || 'Rouges';
+    form.elements.redCount.value = teams[0] ? peons.filter(peon => peon.teamId === teams[0].id).length : 8;
+    form.elements.blueName.value = teams[1]?.name || 'Bleus';
+    form.elements.blueCount.value = teams[1] ? peons.filter(peon => peon.teamId === teams[1].id).length : 8;
 }
 
 async function selectWorld(worldId) {
@@ -94,6 +124,7 @@ function render() {
     $('#emptyState').hidden = Boolean(world);
     if (!world) {
         $('#analysisButton').disabled = true;
+        $('#openWorldJournalButton').disabled = true;
         const rect=resizeCanvas(); context.clearRect(0,0,rect.width,rect.height);
         $('#statusBadge').textContent = 'État : —';
         $('#roundValue').textContent = '—';
@@ -116,6 +147,7 @@ function render() {
         return;
     }
     $('#analysisButton').disabled = false;
+    $('#openWorldJournalButton').disabled = false;
     $('#statusBadge').textContent = `État : ${state.historical ? 'Archive' : friendlyWorldStatus(world.status)}`;
     $('#roundValue').textContent = `${world.currentRound}/${world.maxRounds}`;
     $('#sequenceValue').textContent = world.sequenceNumber;
@@ -299,20 +331,32 @@ function renderPeon() {
     $('#damageValue').textContent = peon.attackDamage;
     $('#positionValue').textContent = `${peon.position.q}, ${peon.position.r}`;
     $('#memoryValue').textContent = Object.keys(peon.mentalMap || {}).length;
+    renderPersonality(peon);
     renderPeonActions(peon);
     $('#peonId').textContent = peon.id;
+}
+
+function renderPersonality(peon) {
+    const personality = peon.personality || { prudence:50, aggressiveness:50, curiosity:50, solidarity:50, riskAppetite:50 };
+    const traits = [['Prudence', personality.prudence], ['Agressivité', personality.aggressiveness], ['Curiosité', personality.curiosity], ['Solidarité', personality.solidarity], ['Goût du risque', personality.riskAppetite]];
+    $('#personalityTraits').innerHTML = traits.map(([label, value]) => `<div class="personality-trait"><span>${label}</span><div><i style="width:${Math.max(0, Math.min(100, value))}%"></i></div><strong>${value}</strong></div>`).join('');
+    const history = peon.actionHistory || [];
+    const learned = Object.values(peon.learnedActions || {});
+    const successes = learned.reduce((sum, item) => sum + (item.successes || 0), 0);
+    const failures = learned.reduce((sum, item) => sum + (item.failures || 0), 0);
+    $('#learningSummary').textContent = `${history.length} expérience(s) mémorisée(s) · ${successes} leçon(s) positive(s) · ${failures} erreur(s)`;
 }
 
 function renderPeonActions(peon) {
     const actions = visibleEvents().filter(event => event.peonId === peon.id && event.eventType === 'PEON_DECISION_MADE').slice(-8).reverse();
     $('#peonActionCount').textContent = actions.length;
     $('#peonActionLog').innerHTML = actions.length
-        ? actions.map(event => `<article class="peon-action"><strong>${friendlyAction(event.payload?.actionType)}</strong><span>Tour ${event.roundNumber} · action n° ${event.sequenceNumber}</span><p>${eventDescription(event)}</p></article>`).join('')
+        ? actions.map(event => { const candidates = event.payload?.candidates || []; const alternatives = candidates.slice(0, 3).map(candidate => `${friendlyAction(candidate.actionType)} ${Number(candidate.score).toFixed(1)}`).join(' · '); return `<article class="peon-action"><strong>${friendlyAction(event.payload?.actionType)} <em>score ${Number(event.payload?.selectedScore ?? 0).toFixed(1)}</em></strong><span>Tour ${event.roundNumber} · action n° ${event.sequenceNumber}${event.payload?.explorationChoice ? ' · expérimentation' : ''}</span><p>${eventDescription(event)}</p>${alternatives ? `<small>Options : ${alternatives}</small>` : ''}</article>`; }).join('')
         : '<p class="muted action-empty">Aucune action à cette étape de la simulation.</p>';
 }
 
 function renderEvents() {
-    const events = visibleEvents().slice(-120).reverse();
+    const events = visibleEvents().slice(-500).reverse();
     $('#eventCount').textContent = events.length;
     $('#eventLog').innerHTML = events.map(event => {
         const actor = peonName(event.peonId) || 'Monde';
@@ -343,13 +387,14 @@ function eventDescription(event) {
         case 'PEON_COMMUNICATED': return `Souvenirs partagés avec ${payload.allyCount} allié(s).`;
         case 'PEON_IDLED': return 'Le peon reste sur place.';
         case 'PEON_ACTION_REJECTED': return `${friendlyAction(payload.actionType)} impossible : ${friendlyReason(payload.reason)}.`;
+        case 'PEON_LEARNED': return `Leçon : ${payload.reward >= 0 ? '+' : ''}${payload.reward} · valeur apprise ${Number(payload.expectedReward).toFixed(1)} pour ${friendlyAction(payload.actionType)}.`;
         case 'PEON_TURN_COMPLETED': return `L’action de ${peonName(event.peonId)} est terminée. Prochain tour du monde : ${payload.nextRound}.`;
         case 'WORLD_FINISHED': return `Fin de la simulation : ${friendlyReason(payload.reason)}.`;
         default: return friendlyReason(payload.reason) || '';
     }
 }
 
-function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_IDLED:'Inactivité', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
+function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
 
 function escapeHtml(value) {
     const element = document.createElement('span');
@@ -386,6 +431,9 @@ canvas.addEventListener('wheel', event => { event.preventDefault(); changeZoom(e
 
 $('#worldSelect').addEventListener('change', event => selectWorld(event.target.value));
 const analysisDialog = $('#analysisDialog');
+const worldJournalDialog = $('#worldJournalDialog');
+$('#openWorldJournalButton').addEventListener('click', () => { if (state.world) worldJournalDialog.showModal(); });
+$('#closeWorldJournalButton').addEventListener('click', () => worldJournalDialog.close());
 $('#analysisButton').addEventListener('click', async () => {
     if (!state.liveWorld) return;
     $('#analysisLoading').hidden = false;
@@ -412,6 +460,7 @@ $('#deleteWorldsButton').addEventListener('click', async () => {
         await api('/api/worlds', { method:'DELETE' });
         state.worlds=[]; state.world=null; state.liveWorld=null; state.events=[]; state.selectedPeonId=null; state.historical=false;
         $('#worldSelect').innerHTML='<option>Aucun monde</option>';
+        renderWorldTemplates();
         render();
         button.textContent = 'Mondes supprimés';
         window.setTimeout(() => { button.textContent = initialLabel; button.disabled = false; }, 1800);
@@ -442,21 +491,23 @@ window.addEventListener('resize', drawWorld);
 const dialog = $('#createDialog');
 [$('#newWorldButton'), $('#emptyCreateButton')].forEach(button => button.addEventListener('click', () => dialog.showModal()));
 $('#closeDialog').addEventListener('click', () => dialog.close());
+$('#worldTemplate').addEventListener('change', event => applyCreationParameters(state.worlds.find(world => world.id === event.target.value) || null));
 $('#createForm').addEventListener('submit', async event => {
     event.preventDefault(); $('#formError').textContent = '';
     const data = Object.fromEntries(new FormData(event.target));
+    const duplicateWorld = state.worlds.find(world => world.name?.trim().toLocaleLowerCase('fr') === data.name.trim().toLocaleLowerCase('fr'));
+    if (duplicateWorld) { $('#formError').textContent = `Un monde nomm\u00e9 "${data.name.trim()}" existe d\u00e9j\u00e0.`; return; }
     const number = key => Number(data[key]);
-    const request = { width:number('width'), height:number('height'), rockPercentage:number('rockPercentage'), treePercentage:number('treePercentage'), foodCellPercentage:number('foodCellPercentage'), minFoodPerCell:number('minFoodPerCell'), maxFoodPerCell:number('maxFoodPerCell'), hungerHealthLossPerTurn:number('hungerHealthLossPerTurn'), maxRounds:number('maxRounds'), teams:[{name:'Rouges',peonCount:number('redCount')},{name:'Bleus',peonCount:number('blueCount')}] };
+    const request = { name:data.name.trim(), width:number('width'), height:number('height'), rockPercentage:number('rockPercentage'), treePercentage:number('treePercentage'), foodCellPercentage:number('foodCellPercentage'), minFoodPerCell:number('minFoodPerCell'), maxFoodPerCell:number('maxFoodPerCell'), hungerHealthLossPerTurn:number('hungerHealthLossPerTurn'), maxRounds:number('maxRounds'), teams:[{name:data.redName.trim(),peonCount:number('redCount')},{name:data.blueName.trim(),peonCount:number('blueCount')}] };
     try { await api('/api/worlds', { method:'POST', body:JSON.stringify(request) }); dialog.close(); await loadWorlds(true); } catch (error) { $('#formError').textContent = error.message; }
 });
 
 async function bootstrap() {
     const defaults = await api('/api/config');
+    state.defaults = defaults;
     state.defaultZoom = defaults.defaultZoomPercent / 100;
     resetView();
-    const form = $('#createForm');
-    const values = { width:defaults.worldWidth, height:defaults.worldHeight, rockPercentage:defaults.rockPercentage, treePercentage:defaults.treePercentage, foodCellPercentage:defaults.foodCellPercentage, minFoodPerCell:defaults.minFoodPerCell, maxFoodPerCell:defaults.maxFoodPerCell, maxRounds:defaults.maxRounds, hungerHealthLossPerTurn:defaults.hungerHealthLossPerTurn };
-    Object.entries(values).forEach(([name,value]) => { if (form.elements[name]) form.elements[name].value=value; });
+    applyCreationParameters(null);
     await loadWorlds();
 }
 

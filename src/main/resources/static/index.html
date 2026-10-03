@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Illuvatar — Simulateur de peons</title>
-    <link rel="stylesheet" href="/styles.css?v=20261003-12">
-    <link rel="stylesheet" href="/journal.css?v=20261002-11">
+    <link rel="stylesheet" href="/styles.css?v=20261003-15">
+    <link rel="stylesheet" href="/journal.css?v=20261003-15">
 </head>
 <body>
 <header class="topbar">
@@ -67,16 +67,18 @@
                 <div class="meter-row"><span>PV</span><div class="meter"><i id="healthBar"></i></div><strong id="healthValue"></strong></div>
                 <div class="meter-row"><span>XP</span><div class="meter xp"><i id="xpBar"></i></div><strong id="xpValue"></strong></div>
                 <dl><div><dt>Niveau</dt><dd id="levelValue"></dd></div><div><dt>Dégâts</dt><dd id="damageValue"></dd></div><div><dt>Position</dt><dd id="positionValue"></dd></div><div><dt>Cases connues</dt><dd id="memoryValue"></dd></div></dl>
+                <div class="peon-personality">
+                    <div class="section-heading"><p class="section-label">TRAITS DE CARACTÈRE</p></div>
+                    <div id="personalityTraits" class="personality-traits"></div>
+                    <p id="learningSummary" class="learning-summary"></p>
+                </div>
                 <div class="peon-actions">
                     <div class="section-heading"><p class="section-label">DERNIÈRES ACTIONS</p><span id="peonActionCount">0</span></div>
                     <div id="peonActionLog" class="peon-action-log"></div>
                 </div>
                 <code id="peonId"></code>
             </div>
-        </section>
-        <section class="panel event-panel">
-            <div class="section-heading"><p class="section-label">JOURNAL DU MONDE</p><span id="eventCount">0</span></div>
-            <div id="eventLog" class="event-log"></div>
+            <button id="openWorldJournalButton" class="button journal-button" type="button">Ouvrir le journal du monde <span id="eventCount">0</span></button>
         </section>
     </aside>
 </main>
@@ -85,6 +87,11 @@
     <form id="createForm">
         <div class="dialog-title"><div><p class="eyebrow">NOUVELLE GENÈSE</p><h2>Créer un monde</h2></div><button type="button" id="closeDialog" class="close">×</button></div>
         <div class="form-grid">
+            <label class="form-wide">Nom du monde<input name="name" type="text" maxlength="80" placeholder="Ex. Terre du Milieu" required></label>
+            <label class="form-wide">Reprendre les param&egrave;tres de
+                <select id="worldTemplate" name="worldTemplate"><option value="">Configuration par d&eacute;faut</option></select>
+                <small>Copie la configuration, sans reprendre la progression ni l'historique.</small>
+            </label>
             <label>Largeur<input name="width" type="number" min="5" max="150" value="50"></label>
             <label>Hauteur<input name="height" type="number" min="5" max="150" value="50"></label>
             <label>Roches (%)<input name="rockPercentage" type="number" min="0" max="60" step="1" value="20"></label>
@@ -94,8 +101,10 @@
             <label>Quantité nourriture max.<input name="maxFoodPerCell" type="number" min="1" value="3"></label>
             <label>Nombre de rounds<input name="maxRounds" type="number" min="1" value="100"></label>
             <label>Perte de faim<input name="hungerHealthLossPerTurn" type="number" min="1" value="5"></label>
-            <label>Peons rouges<input name="redCount" type="number" min="1" value="8"></label>
-            <label>Peons bleus<input name="blueCount" type="number" min="1" value="8"></label>
+            <label>Nom de l'&eacute;quipe 1<input name="redName" type="text" maxlength="40" value="Rouges" required></label>
+            <label>Peons de l'&eacute;quipe 1<input name="redCount" type="number" min="1" value="8"></label>
+            <label>Nom de l'&eacute;quipe 2<input name="blueName" type="text" maxlength="40" value="Bleus" required></label>
+            <label>Peons de l'&eacute;quipe 2<input name="blueCount" type="number" min="1" value="8"></label>
         </div>
         <p id="formError" class="form-error"></p>
         <button class="button primary wide" type="submit">Que le monde soit</button>
@@ -108,6 +117,11 @@
     <div id="analysisContent"></div>
 </dialog>
 
-<script type="module" src="/app.js?v=20261002-11"></script>
+<dialog id="worldJournalDialog" class="world-journal-dialog">
+    <div class="dialog-title"><div><p class="eyebrow">CHRONIQUE DES ÉVÉNEMENTS</p><h2>Journal du monde</h2></div><button type="button" id="closeWorldJournalButton" class="close">×</button></div>
+    <div id="eventLog" class="event-log world-journal-log"></div>
+</dialog>
+
+<script type="module" src="/app.js?v=20261003-15"></script>
 </body>
 </html>

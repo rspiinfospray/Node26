@@ -21,7 +21,7 @@ public class GameDefaultsProperties {
     private int hungerHealthLossPerTurn = 5;
     private int eatHealthGain = 20;
     private int eatExperienceGain = 20;
-    private int moveExperienceGain = 25;
+    private int moveExperienceGain = 5;
     private int moveHealthCost = 5;
     private int attackExperienceGain = 40;
     private int attackDamage = 20;
@@ -33,6 +33,9 @@ public class GameDefaultsProperties {
     private int enemyPursuitHealthThreshold = 70;
     private int seekFoodHealthThreshold = 70;
     private int communicationFrequency = 4;
+    private double learningRate = 0.20;
+    private int explorationPercentage = 10;
+    private int actionHistoryLimit = 100;
     private int defaultZoomPercent = 170;
 
     public int getWorldWidth() { return this.worldWidth; }
@@ -89,6 +92,12 @@ public class GameDefaultsProperties {
     public void setSeekFoodHealthThreshold(int value) { this.seekFoodHealthThreshold = value; }
     public int getCommunicationFrequency() { return this.communicationFrequency; }
     public void setCommunicationFrequency(int value) { this.communicationFrequency = value; }
+    public double getLearningRate() { return this.learningRate; }
+    public void setLearningRate(double value) { this.learningRate = value; }
+    public int getExplorationPercentage() { return this.explorationPercentage; }
+    public void setExplorationPercentage(int value) { this.explorationPercentage = value; }
+    public int getActionHistoryLimit() { return this.actionHistoryLimit; }
+    public void setActionHistoryLimit(int value) { this.actionHistoryLimit = value; }
     public int getDefaultZoomPercent() { return this.defaultZoomPercent; }
     public void setDefaultZoomPercent(int value) { this.defaultZoomPercent = value; }
 }

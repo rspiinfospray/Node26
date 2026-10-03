@@ -6,10 +6,11 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
-public record CreateWorldRequest(@Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, @NotEmpty List<@Valid TeamRequest> teams) {
+public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, @NotEmpty List<@Valid TeamRequest> teams) {
     public record TeamRequest(@NotBlank String name, @Min(1) @Max(100) int peonCount) {
     }
 
