@@ -1,4 +1,4 @@
-const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, source: null, timelineTimer: null, historical: false, defaults: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const viewport = $('#worldViewport');
 const pixiApp = new PIXI.Application();
@@ -102,6 +102,25 @@ async function changeStatus(action) {
     state.liveWorld = await api(`/api/worlds/${state.liveWorld.id}/${action}`, { method: 'POST' });
     if (!state.historical) state.world = state.liveWorld;
     render();
+}
+
+function renderSimulationSpeed() {
+    const speed = state.simulationSpeed;
+    const button = $('#speedButton');
+    if (!speed) { button.disabled = true; return; }
+    button.disabled = false;
+    button.textContent = `Vitesse ×${speed.multiplier} · ${speed.delayMilliseconds} ms`;
+    const nextDelay = speed.multiplier === 1 ? Math.max(1, Math.floor(speed.delayMilliseconds / 2)) : speed.delayMilliseconds * 2;
+    button.title = speed.multiplier === 1 ? `Passer en vitesse ×2 (${nextDelay} ms par séquence)` : `Revenir en vitesse ×1 (${nextDelay} ms par séquence)`;
+    button.classList.toggle('fast', speed.multiplier === 2);
+    button.setAttribute('aria-pressed', String(speed.multiplier === 2));
+}
+
+async function toggleSimulationSpeed() {
+    if (!state.simulationSpeed) return;
+    const multiplier = state.simulationSpeed.multiplier === 1 ? 2 : 1;
+    $('#speedButton').disabled = true;
+    try { state.simulationSpeed = await api(`/api/simulation/speed?multiplier=${multiplier}`, { method:'POST' }); } catch (error) { window.alert(`Le changement de vitesse a échoué : ${error.message}`); } finally { renderSimulationSpeed(); }
 }
 
 async function showSequence(sequence) {
@@ -317,8 +336,15 @@ function drawPeon(peon, world, geo, presentation = {}) {
     peonContainer.addChild(sprite);
     if (!presentation.remembered && geo.size > 9) {
         const barWidth = spriteWidth;
-        const healthBar = new PIXI.Graphics().rect(-barWidth / 2, -spriteHeight * .7, barWidth, 2).fill('#180d0d').rect(-barWidth / 2, -spriteHeight * .7, barWidth * peon.healthPoints / peon.maxHealthPoints, 2).fill('#df5b5b');
+        const barY = -spriteHeight * .7;
+        const healthBar = new PIXI.Graphics().rect(-barWidth / 2, barY, barWidth, 2).fill('#180d0d').rect(-barWidth / 2, barY, barWidth * peon.healthPoints / peon.maxHealthPoints, 2).fill('#df5b5b');
         peonContainer.addChild(healthBar);
+        const levelRadius = Math.max(3, geo.size * .2);
+        const levelX = barWidth / 2 + levelRadius + 1;
+        const levelBadge = new PIXI.Graphics().circle(levelX, barY + 1, levelRadius).fill('#d9a441').stroke({ color:'#211708', width:Math.max(.7, geo.size * .04) });
+        const levelLabel = new PIXI.Text({ text:String(peon.level), style:{ fill:'#17130b', fontFamily:'sans-serif', fontSize:Math.max(5, levelRadius * 1.45), fontWeight:'800' } });
+        levelLabel.anchor.set(.5); levelLabel.position.set(levelX, barY + 1);
+        peonContainer.addChild(levelBadge, levelLabel);
     }
     pixiApp.stage.addChild(peonContainer);
     if (!presentation.remembered) animationState.peons.set(peon.id, peonContainer);
@@ -580,6 +606,7 @@ canvas.addEventListener('pointercancel', () => { state.dragging=false; canvas.cl
 canvas.addEventListener('wheel', event => { event.preventDefault(); changeZoom(event.deltaY < 0 ? .35 : -.35); }, { passive:false });
 
 $('#worldSelect').addEventListener('change', event => selectWorld(event.target.value));
+$('#speedButton').addEventListener('click', toggleSimulationSpeed);
 const analysisDialog = $('#analysisDialog');
 const worldJournalDialog = $('#worldJournalDialog');
 $('#openWorldJournalButton').addEventListener('click', () => { if (state.world) worldJournalDialog.showModal(); });
@@ -653,8 +680,10 @@ $('#createForm').addEventListener('submit', async event => {
 });
 
 async function bootstrap() {
-    const defaults = await api('/api/config');
+    const [defaults, simulationSpeed] = await Promise.all([api('/api/config'), api('/api/simulation/speed')]);
     state.defaults = defaults;
+    state.simulationSpeed = simulationSpeed;
+    renderSimulationSpeed();
     state.defaultZoom = defaults.defaultZoomPercent / 100;
     resetView();
     applyCreationParameters(null);
