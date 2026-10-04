@@ -24,6 +24,7 @@ public class GameDefaultsProperties {
     private int moveExperienceGain = 5;
     private int moveHealthCost = 5;
     private int attackExperienceGain = 40;
+    private int lethalAttackExperienceGain = 60;
     private int attackDamage = 20;
     private int attackDamageGainPerLevel = 10;
     private int maxHealthGainPerLevel = 10;
@@ -74,6 +75,8 @@ public class GameDefaultsProperties {
     public void setMoveHealthCost(int value) { this.moveHealthCost = value; }
     public int getAttackExperienceGain() { return this.attackExperienceGain; }
     public void setAttackExperienceGain(int value) { this.attackExperienceGain = value; }
+    public int getLethalAttackExperienceGain() { return this.lethalAttackExperienceGain; }
+    public void setLethalAttackExperienceGain(int value) { this.lethalAttackExperienceGain = value; }
     public int getAttackDamage() { return this.attackDamage; }
     public void setAttackDamage(int value) { this.attackDamage = value; }
     public int getAttackDamageGainPerLevel() { return this.attackDamageGainPerLevel; }

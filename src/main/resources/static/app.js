@@ -553,7 +553,7 @@ function eventDescription(event) {
         case 'PEON_SAW': return `${payload.visibleCells ?? 0} case(s) visible(s) autour du peon.`;
         case 'FOOD_CONSUMED': return `Nourriture en ${coordinate(payload.position)} : ${payload.quantityBefore} → ${payload.quantityAfter}.`;
         case 'PEON_ATE': return `PV : ${payload.healthBefore} → ${payload.healthAfter}.`;
-        case 'PEON_ATTACKED': return `${peonName(event.peonId)} attaque ${peonName(payload.targetPeonId)} : ${payload.damage} dégâts, PV ${payload.healthBefore} → ${payload.healthAfter}.`;
+        case 'PEON_ATTACKED': return `${peonName(event.peonId)} attaque ${peonName(payload.targetPeonId)} : ${payload.damage} dégâts, PV ${payload.healthBefore} → ${payload.healthAfter}${payload.lethal ? ` · coup mortel, ${payload.attackerExperienceGain} XP pour le vainqueur` : ` · ${payload.attackerExperienceGain ?? 40} XP pour l’attaquant`}.`;
         case 'PEON_EXPERIENCE_GAINED': return `+${payload.amount} XP, total : ${payload.experienceAfter} XP.`;
         case 'PEON_LEVELED_UP': return `Niveau ${payload.levelBefore} → ${payload.levelAfter} · PV max ${payload.maxHealthBefore} → ${payload.maxHealthAfter} · dégâts ${payload.attackDamageBefore} → ${payload.attackDamageAfter}.`;
         case 'PEON_LEVEL_UP_HEAL_APPLIED': return `Soin de niveau : PV ${payload.healthBefore} → ${payload.healthAfter}/${payload.maxHealthPoints}.`;

@@ -348,14 +348,18 @@ public class Illuvatar {
     private void attack(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         Peon target = world.getPeons().get(request.action().targetPeonId());
         if (target == null || !target.isAlive() || target.getTeamId().equals(actor.getTeamId()) || !target.getPosition().equals(actor.getPosition())) { this.reject(world, actor, request, events, index, "INVALID_TARGET"); return; }
-        this.gainExperience(world, actor, request, events, index, this.defaults.getAttackExperienceGain());
-        this.gainExperience(world, target, request, events, index, this.defaults.getAttackExperienceGain());
         int before = target.getHealthPoints();
-        target.hurt(actor.getAttackDamage());
-        events.add(this.event(world, request, actor, "PEON_ATTACKED", index, Map.of("targetPeonId", target.getId(), "healthBefore", before, "healthAfter", target.getHealthPoints(), "damage", actor.getAttackDamage())));
+        int damage = actor.getAttackDamage();
+        target.hurt(damage);
+        boolean lethal = !target.isAlive();
+        int experienceGain = lethal ? this.defaults.getLethalAttackExperienceGain() : this.defaults.getAttackExperienceGain();
+        events.add(this.event(world, request, actor, "PEON_ATTACKED", index, Map.of("targetPeonId", target.getId(), "healthBefore", before, "healthAfter", target.getHealthPoints(), "damage", damage, "lethal", lethal, "attackerExperienceGain", experienceGain)));
+        this.gainExperience(world, actor, request, events, index, experienceGain);
         if (!target.isAlive()) {
             this.removeDeadPeon(world, target);
             events.add(this.event(world, request, target, "PEON_DIED", index, Map.of("reason", "ATTACK", "position", target.getPosition(), "attackerPeonId", actor.getId())));
+        } else {
+            this.gainExperience(world, target, request, events, index, this.defaults.getAttackExperienceGain());
         }
     }
 
