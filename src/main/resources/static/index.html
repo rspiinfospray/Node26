@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Illuvatar — Simulateur de peons</title>
-    <link rel="stylesheet" href="/styles.css?v=20261003-16">
+    <link rel="stylesheet" href="/styles.css?v=20261004-17">
     <link rel="stylesheet" href="/journal.css?v=20261003-15">
 </head>
 <body>
@@ -86,25 +86,40 @@
 <dialog id="createDialog">
     <form id="createForm">
         <div class="dialog-title"><div><p class="eyebrow">NOUVELLE GENÈSE</p><h2>Créer un monde</h2></div><button type="button" id="closeDialog" class="close">×</button></div>
-        <div class="form-grid">
-            <label class="form-wide">Nom du monde<input name="name" type="text" maxlength="80" placeholder="Ex. Terre du Milieu" required></label>
-            <label class="form-wide">Reprendre les param&egrave;tres de
-                <select id="worldTemplate" name="worldTemplate"><option value="">Configuration par d&eacute;faut</option></select>
-                <small>Copie la configuration, sans reprendre la progression ni l'historique.</small>
-            </label>
-            <label>Largeur<input name="width" type="number" min="5" max="150" value="50"></label>
-            <label>Hauteur<input name="height" type="number" min="5" max="150" value="50"></label>
-            <label>Roches (%)<input name="rockPercentage" type="number" min="0" max="60" step="1" value="20"></label>
-            <label>Arbres (%)<input name="treePercentage" type="number" min="0" max="60" step="1" value="15"></label>
-            <label>Cases avec nourriture (%)<input name="foodCellPercentage" type="number" min="0" max="100" step="1" value="15"></label>
-            <label>Quantité nourriture min.<input name="minFoodPerCell" type="number" min="1" value="1"></label>
-            <label>Quantité nourriture max.<input name="maxFoodPerCell" type="number" min="1" value="3"></label>
-            <label>Nombre de rounds<input name="maxRounds" type="number" min="1" value="100"></label>
-            <label>Perte de faim<input name="hungerHealthLossPerTurn" type="number" min="1" value="5"></label>
-            <label>Nom de l'&eacute;quipe 1<input name="redName" type="text" maxlength="40" value="Rouges" required></label>
-            <label>Peons de l'&eacute;quipe 1<input name="redCount" type="number" min="1" value="8"></label>
-            <label>Nom de l'&eacute;quipe 2<input name="blueName" type="text" maxlength="40" value="Bleus" required></label>
-            <label>Peons de l'&eacute;quipe 2<input name="blueCount" type="number" min="1" value="8"></label>
+        <div class="world-form-sections">
+            <fieldset class="world-form-section">
+                <legend>Monde général</legend>
+                <div class="form-grid">
+                    <label class="form-wide">Nom du monde<input name="name" type="text" maxlength="80" placeholder="Ex. Terre du Milieu" required></label>
+                    <label class="form-wide">Reprendre les param&egrave;tres de
+                        <select id="worldTemplate" name="worldTemplate"><option value="">Configuration par d&eacute;faut</option></select>
+                        <small>Copie la configuration, sans reprendre la progression ni l'historique.</small>
+                    </label>
+                    <label>Largeur<input name="width" type="number" min="5" max="150" value="50"></label>
+                    <label>Hauteur<input name="height" type="number" min="5" max="150" value="50"></label>
+                    <label>Nombre de rounds<input name="maxRounds" type="number" min="1" value="100"></label>
+                    <label>Perte de faim par round<input name="hungerHealthLossPerTurn" type="number" min="1" value="5"></label>
+                </div>
+            </fieldset>
+            <fieldset class="world-form-section">
+                <legend>Ressources et terrain</legend>
+                <div class="form-grid">
+                    <label>Roches (%)<input name="rockPercentage" type="number" min="0" max="60" step="1" value="20"></label>
+                    <label>Arbres (%)<input name="treePercentage" type="number" min="0" max="60" step="1" value="15"></label>
+                    <label class="form-wide">Cases avec nourriture (%)<input name="foodCellPercentage" type="number" min="0" max="100" step="1" value="15"></label>
+                    <label>Quantité de nourriture min.<input name="minFoodPerCell" type="number" min="1" value="1"></label>
+                    <label>Quantité de nourriture max.<input name="maxFoodPerCell" type="number" min="1" value="3"></label>
+                </div>
+            </fieldset>
+            <fieldset class="world-form-section">
+                <legend>Équipes et péons</legend>
+                <div class="form-grid">
+                    <label>Nom de l'&eacute;quipe 1<input name="redName" type="text" maxlength="40" value="Rouges" required></label>
+                    <label>Péons de l'&eacute;quipe 1<input name="redCount" type="number" min="1" value="8"></label>
+                    <label>Nom de l'&eacute;quipe 2<input name="blueName" type="text" maxlength="40" value="Bleus" required></label>
+                    <label>Péons de l'&eacute;quipe 2<input name="blueCount" type="number" min="1" value="8"></label>
+                </div>
+            </fieldset>
         </div>
         <p id="formError" class="form-error"></p>
         <button class="button primary wide" type="submit">Que le monde soit</button>
