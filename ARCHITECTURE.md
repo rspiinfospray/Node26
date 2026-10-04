@@ -289,6 +289,8 @@ Après la résolution complète de sa décision principale, le peon perd systém
 
 Les PV ne descendent jamais sous `0`. Chaque application de la faim produit un événement `PeonHungerApplied` contenant les PV avant et après la perte. Si les PV atteignent `0`, le peon meurt immédiatement, produit un événement `PeonDied` avec la raison `HUNGER` et est retiré de `occupantPeonIds`. Il ne reçoit plus de tour et ne peut plus effectuer ni recevoir d'action. Un décès provoqué par une attaque utilise la raison `ATTACK` et retire également immédiatement le peon de la carte.
 
+Chaque décès crée également une `Grave` persistante à la position du peon, avec son identifiant, le round et la séquence de sa mort. Une tombe ne modifie pas le terrain, ne bloque pas les déplacements et peut donc se superposer à une plaine ou à une forêt. Plusieurs tombes peuvent occuper la même case. L'IHM les affiche comme des sprites superposés au terrain ; cliquer sur une tombe sélectionne le peon mort et ouvre les mêmes informations que la sélection d'un peon vivant. Les tombes ne sont pas affichées dans la carte mentale afin de ne pas révéler un décès que le peon sélectionné n'a pas observé.
+
 La décision, ses effets, la perte de PV liée à la faim et l'éventuel décès sont persistés dans une seule transaction. Ils partagent le même `sequenceNumber` et sont ordonnés par leur `eventIndex`.
 
 ### Décision autonome et subjective

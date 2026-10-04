@@ -16,6 +16,7 @@ import org.infospray.peonsimulator.domain.event.SimulationEvent;
 import org.infospray.peonsimulator.domain.model.ActionType;
 import org.infospray.peonsimulator.domain.model.Cell;
 import org.infospray.peonsimulator.domain.model.HexCoordinate;
+import org.infospray.peonsimulator.domain.model.Grave;
 import org.infospray.peonsimulator.domain.model.Peon;
 import org.infospray.peonsimulator.domain.model.ActionExperience;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
@@ -411,7 +412,10 @@ public class Illuvatar {
     }
 
     private void reject(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index, String reason) { events.add(this.event(world, request, actor, "PEON_ACTION_REJECTED", index, Map.of("reason", reason, "actionType", request.action().type().name()))); }
-    private void removeDeadPeon(World world, Peon peon) { world.cell(peon.getPosition()).removeOccupant(peon.getId()); }
+    private void removeDeadPeon(World world, Peon peon) {
+        world.cell(peon.getPosition()).removeOccupant(peon.getId());
+        world.getGraves().putIfAbsent(peon.getId(), new Grave(peon.getId(), peon.getPosition(), world.getCurrentRound(), world.getSequenceNumber()));
+    }
 
     private void observe(World world, Peon peon, long sequence) {
         for (HexCoordinate coordinate : this.visibleCoordinates(world, peon)) { this.remember(world, peon, world.cell(coordinate), coordinate.equals(peon.getPosition()), sequence); }

@@ -35,6 +35,7 @@ class IlluvatarAttackTest {
         assertThat(fixture.actor().getExperiencePoints()).isEqualTo(60);
         assertThat(fixture.target().getExperiencePoints()).isZero();
         assertThat(fixture.target().isAlive()).isFalse();
+        assertThat(fixture.world().getGraves()).containsKey(fixture.target().getId());
     }
 
     @Test
@@ -88,9 +89,9 @@ class IlluvatarAttackTest {
         when(eventRepository.actionWasProcessed(actionId)).thenReturn(false);
         Illuvatar illuvatar = new Illuvatar(worldRepository, eventRepository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionProvider.class), mock(PeonFirstNameCatalog.class), defaults);
         PeonAction action = new PeonAction(ActionType.ATTAQUER, null, target.getId(), PeonPurpose.GAGNER_DES_NIVEAUX, "test");
-        return new AttackFixture(illuvatar, new ActionRequest(actionId, worldId, actor.getId(), 1, action), actor, target);
+        return new AttackFixture(illuvatar, new ActionRequest(actionId, worldId, actor.getId(), 1, action), actor, target, world);
     }
 
-    private record AttackFixture(Illuvatar illuvatar, ActionRequest request, Peon actor, Peon target) {
+    private record AttackFixture(Illuvatar illuvatar, ActionRequest request, Peon actor, Peon target, World world) {
     }
 }

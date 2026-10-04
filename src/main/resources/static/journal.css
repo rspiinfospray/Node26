@@ -44,6 +44,7 @@
 .timeline-control { padding: 6px 10px; font-size: 10px; white-space: nowrap; }
 .timeline-control:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .legend .tree { background: url('/assets/terrain-tree.png') center/cover; }
+.legend .grave { background: url('/assets/grave.png') center/contain no-repeat; }
 
 .analysis-dialog { width: min(850px, calc(100vw - 32px)); max-height: 86vh; overflow: auto; }
 .analysis-summary { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 8px; margin: 14px 0; }

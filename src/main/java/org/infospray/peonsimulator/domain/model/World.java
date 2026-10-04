@@ -28,6 +28,7 @@ public class World {
     private Map<String, Cell> cells = new LinkedHashMap<>();
     private Map<UUID, Team> teams = new LinkedHashMap<>();
     private Map<UUID, Peon> peons = new LinkedHashMap<>();
+    private Map<UUID, Grave> graves = new LinkedHashMap<>();
 
     public World() {
     }
@@ -52,6 +53,7 @@ public class World {
     public Map<String, Cell> getCells() { return this.cells; }
     public Map<UUID, Team> getTeams() { return this.teams; }
     public Map<UUID, Peon> getPeons() { return this.peons; }
+    public Map<UUID, Grave> getGraves() { return this.graves; }
     public void setId(UUID id) { this.id = id; }
     public void setName(String name) { this.name = name; }
     public void setStatus(WorldStatus status) { this.status = status; }
@@ -77,7 +79,13 @@ public class World {
     public void setPendingActionId(UUID value) { this.pendingActionId = value; }
     public void setCells(Map<String, Cell> cells) { this.cells = new LinkedHashMap<>(cells); }
     public void setTeams(Map<UUID, Team> teams) { this.teams = new LinkedHashMap<>(teams); }
-    public void setPeons(Map<UUID, Peon> peons) { this.peons = new LinkedHashMap<>(peons); }
+    public void setPeons(Map<UUID, Peon> peons) {
+        this.peons = new LinkedHashMap<>(peons);
+        this.peons.values().stream().filter(peon -> !peon.isAlive()).forEach(peon -> this.graves.putIfAbsent(peon.getId(), new Grave(peon.getId(), peon.getPosition(), this.currentRound, this.sequenceNumber)));
+    }
+    public void setGraves(Map<UUID, Grave> graves) {
+        if (graves != null) { this.graves.putAll(graves); }
+    }
 
     public Cell cell(HexCoordinate coordinate) { return this.cells.get(key(coordinate)); }
     public boolean contains(HexCoordinate coordinate) { return this.cells.containsKey(key(coordinate)); }
