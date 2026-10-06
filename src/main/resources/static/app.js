@@ -5,7 +5,7 @@ const pixiApp = new PIXI.Application();
 await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
@@ -251,20 +251,24 @@ function drawWorld() {
     const geo = geometry(world, rect);
     const selected = world.peons[state.selectedPeonId];
     const mental = !state.selectedHouseId && $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
+    const visibleWoodBundles = [];
     Object.values(world.cells).forEach(cell => {
         const known = !mental || mental[`${cell.coordinate.q}:${cell.coordinate.r}`];
-        const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, occupantPeonIds: known.rememberedOccupants } : cell;
+        const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, woodBundleQuantity:known.rememberedWoodBundleQuantity || 0, occupantPeonIds: known.rememberedOccupants } : { ...cell, woodBundleQuantity:Object.values(world.woodBundles || {}).filter(bundle => bundle.position.q === cell.coordinate.q && bundle.position.r === cell.coordinate.r).reduce((sum, bundle) => sum + bundle.quantity, 0) };
         const point = centerOf(cell.coordinate, geo);
         drawCell(rendered, point, geo, Boolean(known));
         if (known && rendered.foodQuantity > 0) { drawFood(rendered, point, geo); }
+        if (known && rendered.woodBundleQuantity > 0) { visibleWoodBundles.push({ quantity:rendered.woodBundleQuantity, point }); }
     });
     Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
     if (!mental) {
         drawGraves(world, geo);
+        visibleWoodBundles.forEach(bundle => drawWoodBundle(bundle.quantity, bundle.point, geo));
         Object.values(world.peons).filter(peon => peon.alive && !peon.insideHouseId).forEach(peon => drawPeon(peon, world, geo));
     }
     else if (selected) {
         drawRememberedGraves(selected, geo);
+        visibleWoodBundles.forEach(bundle => drawWoodBundle(bundle.quantity, bundle.point, geo));
         drawRememberedPeons(selected, world, geo);
         drawPeon(selected, world, geo);
     }
@@ -325,6 +329,14 @@ function drawFood(cell, point, geo) {
         const label = new PIXI.Text({ text:String(cell.foodQuantity), style:{ fill:'#ffffff', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#17120a', width:2 } } });
         label.anchor.set(.5); label.position.set(point.x + size * .32, point.y + size * .34); pixiApp.stage.addChild(label);
     }
+}
+
+function drawWoodBundle(quantity, point, geo) {
+    const sprite = new PIXI.Sprite(assets.woodBundle);
+    const size = Math.max(7, geo.size * .82);
+    sprite.anchor.set(.5); sprite.position.set(point.x - geo.size * .48, point.y + geo.size * .38); sprite.width = size; sprite.height = size;
+    pixiApp.stage.addChild(sprite);
+    if (geo.size > 10) { const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4d5', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .3), fontWeight:'700', stroke:{ color:'#25150b', width:2 } } }); label.anchor.set(.5); label.position.set(sprite.x + size * .3, sprite.y + size * .3); pixiApp.stage.addChild(label); }
 }
 
 function positionedGraves(graves, geo) {
@@ -646,9 +658,9 @@ function renderEvents() {
 
 function visibleEvents() { return state.events.filter(event => event.sequenceNumber <= (state.world?.sequenceNumber ?? 0)); }
 function peonName(peonId) { return peonId ? state.world?.peons?.[peonId]?.firstName || state.liveWorld?.peons?.[peonId]?.firstName || `Peon ${peonId.slice(0, 8)}` : null; }
-function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
+function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
 function friendlyPurpose(purpose) { return ({ SURVIVRE:'survivre', GAGNER_DES_NIVEAUX:'gagner des niveaux', AIDER_LES_ALLIES:'aider les autres peons' })[purpose] || purpose?.replaceAll('_', ' ').toLowerCase(); }
-function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
+function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', NO_WOOD_BUNDLE:'aucun fagot de bois sur la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
 function coordinate(value) { return value ? `(${value.q}, ${value.r})` : ''; }
 function eventDescription(event) {
     const payload = event.payload || {};
@@ -667,6 +679,8 @@ function eventDescription(event) {
         case 'PEON_DIED': return `Mort causée par ${friendlyReason(payload.reason)} en ${coordinate(payload.position)}.`;
         case 'PEON_COMMUNICATED': return `Souvenirs partagés avec ${payload.allyCount} allié(s).`;
         case 'PEON_CHOPPED_WOOD': return `Bois récolté : +${payload.woodCollected}, inventaire ${payload.woodAfter}. PV de l’arbre : ${payload.treeHealthBefore} → ${payload.treeHealthAfter}.`;
+        case 'WOOD_DROPPED': return `${payload.woodQuantity} bois abandonné en ${coordinate(payload.position)}.`;
+        case 'WOOD_LOOTED': return `Fagot pillé : +${payload.woodCollected} bois, inventaire ${payload.woodAfter}.`;
         case 'TREE_CUT_DOWN': return `L’arbre en ${coordinate(payload.position)} devient une plaine.`;
         case 'HOUSE_BUILT': return `Maison construite en ${coordinate(payload.position)} avec ${payload.woodSpent} bois.`;
         case 'HOUSE_CLAIMED': return `Maison vide prise en possession en ${coordinate(payload.position)}.`;
@@ -686,7 +700,7 @@ function eventDescription(event) {
     }
 }
 
-function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
+function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
 
 function escapeHtml(value) {
     const element = document.createElement('span');

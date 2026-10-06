@@ -20,6 +20,7 @@ import org.infospray.peonsimulator.domain.model.Grave;
 import org.infospray.peonsimulator.domain.model.House;
 import org.infospray.peonsimulator.domain.model.ItemType;
 import org.infospray.peonsimulator.domain.model.RememberedHouseObservation;
+import org.infospray.peonsimulator.domain.model.WoodBundle;
 import org.infospray.peonsimulator.domain.model.Peon;
 import org.infospray.peonsimulator.domain.model.ActionExperience;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
@@ -174,7 +175,7 @@ public class Illuvatar {
                 actor.hurt(hungerLoss);
                 events.add(this.event(world, request, actor, "PEON_HUNGER_APPLIED", eventIndex, Map.of("healthBefore", before, "healthAfter", actor.getHealthPoints(), "loss", hungerLoss, "sheltered", shelter != null)));
                 if (!actor.isAlive()) {
-                    this.removeDeadPeon(world, actor);
+                    this.removeDeadPeon(world, actor, request, events, eventIndex);
                     events.add(this.event(world, request, actor, "PEON_DIED", eventIndex, Map.of("reason", "HUNGER", "position", actor.getPosition())));
                 }
             }
@@ -303,12 +304,17 @@ public class Illuvatar {
         Cell current = world.cell(peon.getPosition());
         House house = world.houseAt(peon.getPosition());
         List<PeonDecisionContext.ObservedPeon> occupants = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getInsideHouseId() == null || other.getInsideHouseId().equals(peon.getInsideHouseId())).map(other -> new PeonDecisionContext.ObservedPeon(other.getId(), other.getTeamId(), other.getHealthPoints(), other.getLevel())).toList();
+        List<Peon> alliedPeons = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getTeamId().equals(peon.getTeamId())).toList();
         List<HexCoordinate> neighbors = peon.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> { RememberedCell remembered = peon.getMentalMap().get(World.key(coordinate)); return remembered != null && remembered.getTerrain() != TerrainType.ROCK; }).toList();
         Peon houseHost = house == null || house.getHostPeonId() == null ? null : world.getPeons().get(house.getHostPeonId());
         PeonDecisionContext.ObservedHouse observedHouse = house == null ? null : new PeonDecisionContext.ObservedHouse(house.getId(), house.getHostPeonId(), houseHost == null ? null : houseHost.getTeamId(), house.getPosition(), house.contains(peon.getId()), !house.isEmpty());
         List<PeonDecisionContext.ObservedHouse> knownHouses = peon.getMentalMap().values().stream().map(RememberedCell::getRememberedHouse).filter(java.util.Objects::nonNull).map(remembered -> new PeonDecisionContext.ObservedHouse(remembered.houseId(), null, remembered.hostTeamId(), remembered.position(), false, remembered.occupied())).toList();
         boolean buildable = current.getTerrain() == TerrainType.PLAIN && house == null && current.getOccupantPeonIds().stream().allMatch(peon.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(peon.getPosition()));
-        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), buildable, observedHouse, knownHouses);
+        int woodBundleQuantity = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(peon.getPosition())).mapToInt(WoodBundle::quantity).sum();
+        int usefulCommunicationCount = (int) peon.getMentalMap().entrySet().stream().filter(entry -> alliedPeons.stream().anyMatch(ally -> ally.getMentalMap().get(entry.getKey()) == null || ally.getMentalMap().get(entry.getKey()).getLastObservedAtSequence() < entry.getValue().getLastObservedAtSequence())).count();
+        int consecutiveCommunicationCount = 0;
+        for (int historyIndex = peon.getActionHistory().size() - 1; historyIndex >= 0 && peon.getActionHistory().get(historyIndex).actionType() == ActionType.COMMUNIQUER; historyIndex--) { consecutiveCommunicationCount++; }
+        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount);
     }
 
     private void resolveAction(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -321,6 +327,7 @@ public class Illuvatar {
             case COMMUNIQUER -> this.communicate(world, actor, request, events, index);
             case COUPER_DU_BOIS -> this.chopWood(world, actor, request, events, index);
             case CONSTRUIRE_MAISON -> this.buildHouse(world, actor, request, events, index);
+            case PILLER -> this.loot(world, actor, request, events, index);
             case NE_RIEN_FAIRE -> events.add(this.event(world, request, actor, "PEON_IDLED", index, Map.of()));
         }
     }
@@ -360,7 +367,7 @@ public class Illuvatar {
         actor.hurt(this.defaults.getMoveHealthCost());
         events.add(this.event(world, request, actor, "PEON_MOVEMENT_COST_APPLIED", index, Map.of("healthBefore", healthBeforeMovementCost, "healthAfter", actor.getHealthPoints(), "loss", this.defaults.getMoveHealthCost())));
         if (!actor.isAlive()) {
-            this.removeDeadPeon(world, actor);
+            this.removeDeadPeon(world, actor, request, events, index);
             events.add(this.event(world, request, actor, "PEON_DIED", index, Map.of("reason", "MOVEMENT", "position", actor.getPosition())));
             return;
         }
@@ -379,7 +386,7 @@ public class Illuvatar {
         events.add(this.event(world, request, actor, "PEON_ATTACKED", index, Map.of("targetPeonId", target.getId(), "healthBefore", before, "healthAfter", target.getHealthPoints(), "damage", damage, "lethal", lethal, "attackerExperienceGain", experienceGain)));
         this.gainExperience(world, actor, request, events, index, experienceGain);
         if (!target.isAlive()) {
-            this.removeDeadPeon(world, target);
+            this.removeDeadPeon(world, target, request, events, index);
             events.add(this.event(world, request, target, "PEON_DIED", index, Map.of("reason", "ATTACK", "position", target.getPosition(), "attackerPeonId", actor.getId())));
         } else {
             this.gainExperience(world, target, request, events, index, this.defaults.getAttackExperienceGain());
@@ -444,6 +451,17 @@ public class Illuvatar {
         this.gainExperience(world, actor, request, events, index, this.defaults.getBuildHouseExperienceGain());
     }
 
+    private void loot(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        List<WoodBundle> bundles = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(actor.getPosition())).toList();
+        if (bundles.isEmpty()) { this.reject(world, actor, request, events, index, "NO_WOOD_BUNDLE"); return; }
+        int quantity = bundles.stream().mapToInt(WoodBundle::quantity).sum();
+        bundles.forEach(bundle -> world.getWoodBundles().remove(bundle.id()));
+        actor.addItem(ItemType.WOOD, quantity);
+        events.add(this.event(world, request, actor, "WOOD_LOOTED", index, Map.of("position", actor.getPosition(), "woodCollected", quantity, "woodAfter", actor.itemCount(ItemType.WOOD), "bundleCount", bundles.size())));
+        this.gainExperience(world, actor, request, events, index, this.defaults.getLootExperienceGain());
+        this.remember(world, actor, world.cell(actor.getPosition()), true, world.getSequenceNumber());
+    }
+
     private void leaveHouse(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (actor.getInsideHouseId() == null) { return; }
         House house = world.getHouses().get(actor.getInsideHouseId());
@@ -493,7 +511,7 @@ public class Illuvatar {
     }
 
     private void reject(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index, String reason) { events.add(this.event(world, request, actor, "PEON_ACTION_REJECTED", index, Map.of("reason", reason, "actionType", request.action().type().name()))); }
-    private void removeDeadPeon(World world, Peon peon) {
+    private void removeDeadPeon(World world, Peon peon, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (peon.getInsideHouseId() != null) {
             House house = world.getHouses().get(peon.getInsideHouseId());
             if (house != null && peon.getId().equals(house.getHostPeonId())) { for (UUID occupantId : List.copyOf(house.getOccupantPeonIds())) { Peon occupant = world.getPeons().get(occupantId); if (occupant != null) { occupant.setInsideHouseId(null); } } house.empty(); } else if (house != null) { house.leave(peon.getId()); }
@@ -501,6 +519,13 @@ public class Illuvatar {
         }
         world.cell(peon.getPosition()).removeOccupant(peon.getId());
         world.getGraves().putIfAbsent(peon.getId(), new Grave(peon.getId(), peon.getPosition(), world.getCurrentRound(), world.getSequenceNumber()));
+        int woodQuantity = peon.itemCount(ItemType.WOOD);
+        if (woodQuantity > 0) {
+            peon.removeItem(ItemType.WOOD, woodQuantity);
+            WoodBundle bundle = new WoodBundle(UUID.randomUUID(), peon.getPosition(), woodQuantity);
+            world.getWoodBundles().put(bundle.id(), bundle);
+            events.add(this.event(world, request, peon, "WOOD_DROPPED", index, Map.of("bundleId", bundle.id(), "position", bundle.position(), "woodQuantity", bundle.quantity())));
+        }
     }
 
     private void observe(World world, Peon peon, long sequence) {
@@ -522,6 +547,8 @@ public class Illuvatar {
             Peon host = observedHouse.getHostPeonId() == null ? null : world.getPeons().get(observedHouse.getHostPeonId());
             memory.setRememberedHouse(new RememberedHouseObservation(observedHouse.getId(), observedHouse.getPosition(), host == null ? null : host.getTeamId(), !observedHouse.isEmpty(), sequence));
         }
+        int rememberedWood = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(cell.getCoordinate())).mapToInt(WoodBundle::quantity).sum();
+        memory.setRememberedWoodBundleQuantity(rememberedWood);
     }
 
     private List<HexCoordinate> visibleCoordinates(World world, Peon peon) {

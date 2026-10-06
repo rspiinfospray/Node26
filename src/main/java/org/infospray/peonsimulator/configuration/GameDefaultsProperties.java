@@ -44,6 +44,7 @@ public class GameDefaultsProperties {
     private int woodRequiredForHouse = 200;
     private int chopWoodExperienceGain = 20;
     private int buildHouseExperienceGain = 70;
+    private int lootExperienceGain = 10;
     private int houseHungerPercentage = 50;
     private int defaultZoomPercent = 170;
 
@@ -125,6 +126,8 @@ public class GameDefaultsProperties {
     public void setChopWoodExperienceGain(int value) { this.chopWoodExperienceGain = value; }
     public int getBuildHouseExperienceGain() { return this.buildHouseExperienceGain; }
     public void setBuildHouseExperienceGain(int value) { this.buildHouseExperienceGain = value; }
+    public int getLootExperienceGain() { return this.lootExperienceGain; }
+    public void setLootExperienceGain(int value) { this.lootExperienceGain = value; }
     public int getHouseHungerPercentage() { return this.houseHungerPercentage; }
     public void setHouseHungerPercentage(int value) { this.houseHungerPercentage = value; }
 }

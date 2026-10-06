@@ -127,6 +127,43 @@ class RuleBasedPeonDecisionProviderTest {
         assertThat(exploringProvider.decide(context).action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
     }
 
+    @Test
+    void shouldLootWoodBundleOnCurrentCell() {
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 80, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50, 70), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 75, false, null, List.of(), 0, 0);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.PILLER);
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.PILLER).findFirst().orElseThrow().factors()).containsKeys("expérience", "bois récupérable", "projet de maison");
+    }
+
+    @Test
+    void shouldValueLootOpportunityWhenAttackCanKillEnemy() {
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedPeon enemy = new PeonDecisionContext.ObservedPeon(UUID.randomUUID(), UUID.randomUUID(), 10, 1);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(20, 80, 50, 50, 70), Map.of(), Map.of(), List.of(enemy), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.ATTAQUER).findFirst().orElseThrow().factors()).containsKey("pillage après victoire");
+    }
+
+    @Test
+    void shouldLeaveHouseForReachableFoodBeforeItIsTooLate() {
+        UUID teamId = UUID.randomUUID();
+        HexCoordinate position = new HexCoordinate(6, 8);
+        HexCoordinate foodPosition = new HexCoordinate(5, 9);
+        RememberedCell foodMemory = new RememberedCell(new Cell(foodPosition, TerrainType.PLAIN, 2), false, 20);
+        PeonDecisionContext.ObservedPeon ally = new PeonDecisionContext.ObservedPeon(UUID.randomUUID(), teamId, 80, 2);
+        PeonDecisionContext.ObservedHouse house = new PeonDecisionContext.ObservedHouse(UUID.randomUUID(), UUID.randomUUID(), teamId, position, true, true);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 15, 120, 100, 2, position, false, 30, 42, new PeonPersonality(69, 18, 72, 83, 23), Map.of(), Map.of("5:9", foodMemory), List.of(ally), 0, List.of(foodPosition), 30, 29, TerrainType.PLAIN, 0, 0, 0, false, house, List.of(house), 18, 0);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.SE_DEPLACER);
+        assertThat(decision.action().destination()).isEqualTo(foodPosition);
+    }
+
     private PeonDecision decisionNearGrave(PeonPersonality personality) {
         UUID peonId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();

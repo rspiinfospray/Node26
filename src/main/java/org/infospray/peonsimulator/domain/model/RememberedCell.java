@@ -16,6 +16,7 @@ public class RememberedCell {
     private List<RememberedPeonObservation> rememberedPeons = new ArrayList<>();
     private List<RememberedGraveObservation> rememberedGraves = new ArrayList<>();
     private RememberedHouseObservation rememberedHouse;
+    private int rememberedWoodBundleQuantity;
 
     public RememberedCell() {
     }
@@ -52,6 +53,7 @@ public class RememberedCell {
     public List<RememberedPeonObservation> getRememberedPeons() { return this.rememberedPeons; }
     public List<RememberedGraveObservation> getRememberedGraves() { return this.rememberedGraves; }
     public RememberedHouseObservation getRememberedHouse() { return this.rememberedHouse; }
+    public int getRememberedWoodBundleQuantity() { return this.rememberedWoodBundleQuantity; }
     public void setCoordinate(HexCoordinate coordinate) { this.coordinate = coordinate; }
     public void setTerrain(TerrainType terrain) { this.terrain = terrain; }
     public void setVisited(boolean visited) { this.visited = visited; }
@@ -63,6 +65,7 @@ public class RememberedCell {
     public void setRememberedPeons(List<RememberedPeonObservation> value) { this.rememberedPeons = value == null ? new ArrayList<>() : new ArrayList<>(value); }
     public void setRememberedGraves(List<RememberedGraveObservation> value) { this.rememberedGraves = value == null ? new ArrayList<>() : new ArrayList<>(value); }
     public void setRememberedHouse(RememberedHouseObservation value) { this.rememberedHouse = value; }
+    public void setRememberedWoodBundleQuantity(int value) { this.rememberedWoodBundleQuantity = Math.max(0, value); }
 
     public void refresh(Cell cell, boolean nowVisited, long sequence) {
         this.refresh(cell, nowVisited, sequence, List.of());
