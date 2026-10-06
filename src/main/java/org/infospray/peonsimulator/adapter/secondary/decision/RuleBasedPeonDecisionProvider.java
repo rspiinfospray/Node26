@@ -43,7 +43,8 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         HexCoordinate knownFood = this.closestKnownFood(context);
         HexCoordinate knownTree = this.closestKnownTree(context);
         RememberedGraveObservation knownGrave = this.closestKnownGrave(context);
-        context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, knownFood, knownTree, knownGrave, situationKey)));
+        PeonDecisionContext.ObservedHouse safeHouse = this.closestKnownSafeHouse(context);
+        context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, knownFood, knownTree, knownGrave, safeHouse, situationKey)));
         candidates.add(this.scoreSee(context, knownEnemy, knownGrave, situationKey));
         candidates.add(this.scoreIdle(context, knownEnemy, knownGrave, situationKey));
         candidates.sort(Comparator.comparingDouble(WeightedAction::score).reversed());
@@ -83,6 +84,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         Map<String, Double> factors = new LinkedHashMap<>();
         factors.put("solidarité", context.personality().getSolidarity() * 0.55);
         factors.put("connaissances partageables", Math.min(25, context.mentalMap().size() * 0.15));
+        if (context.house() != null && !context.house().actorInside() && (context.house().hostTeamId() == null || context.house().hostTeamId().equals(context.teamId()))) {
+            factors.put("demande de protection", (100.0 - this.healthPercentage(context)) * 0.55 + context.personality().getPrudence() * 0.35);
+            factors.put("économie de faim", this.defaults.getHungerHealthLossPerTurn() * (100 - this.defaults.getHouseHungerPercentage()) / 100.0 * 3.0);
+        }
         this.addLearning(context, situationKey, ActionType.COMMUNIQUER, factors);
         return this.weighted(new PeonAction(ActionType.COMMUNIQUER, null, null, PeonPurpose.AIDER_LES_ALLIES, ""), factors);
     }
@@ -105,7 +110,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         return this.weighted(new PeonAction(ActionType.CONSTRUIRE_MAISON, null, null, PeonPurpose.SURVIVRE, ""), factors);
     }
 
-    private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, HexCoordinate food, HexCoordinate tree, RememberedGraveObservation grave, String situationKey) {
+    private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, HexCoordinate food, HexCoordinate tree, RememberedGraveObservation grave, PeonDecisionContext.ObservedHouse safeHouse, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
         RememberedCell destinationMemory = context.mentalMap().get(destination.q() + ":" + destination.r());
         factors.put("expérience", this.defaults.getMoveExperienceGain() * 0.35);
@@ -131,6 +136,16 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             factors.put("éloignement de la tombe", distanceChange * context.personality().getPrudence() * 0.30);
             factors.put("enquête autour de la tombe", -distanceChange * (context.personality().getCuriosity() * 0.22 + context.personality().getAggressiveness() * 0.18));
         }
+        if (safeHouse != null && !this.isInsideHouse(context)) {
+            int progress = context.position().distanceTo(safeHouse.position()) - destination.distanceTo(safeHouse.position());
+            double danger = enemy != null && this.isDangerous(context, enemy.healthPoints(), enemy.level()) ? 35.0 : 0.0;
+            factors.put("recherche d'un abri", progress * (danger + (100.0 - this.healthPercentage(context)) * 0.45 + context.personality().getPrudence() * 0.35));
+        }
+        if (this.isInsideHouse(context)) {
+            double danger = enemy == null ? 0.0 : context.personality().getPrudence() * (this.isDangerous(context, enemy.healthPoints(), enemy.level()) ? 0.8 : 0.35);
+            double hungerProtection = this.defaults.getHungerHealthLossPerTurn() * (100 - this.defaults.getHouseHungerPercentage()) / 100.0 * 4.0;
+            factors.put("perte de la protection", -(danger + hungerProtection + (100.0 - this.healthPercentage(context)) * 0.45));
+        }
         factors.put("coût en PV", -this.defaults.getMoveHealthCost() * (1 + context.personality().getPrudence() / 100.0));
         this.addLearning(context, situationKey, ActionType.SE_DEPLACER, factors);
         boolean graveWarningDominates = grave != null && context.personality().getPrudence() > context.personality().getCuriosity() + context.personality().getAggressiveness();
@@ -146,6 +161,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (staleRounds > 0) { factors.put("curiosité", context.personality().getCuriosity() * 0.12); }
         if (grave != null) { factors.put("surveillance autour de la tombe", context.personality().getCuriosity() * 0.10 + context.personality().getAggressiveness() * 0.06); }
         if (context.concealedByTree() && enemy != null && this.isDangerous(context, enemy.healthPoints(), enemy.level())) { factors.put("maintien à couvert", context.personality().getPrudence() * 0.5); }
+        if (this.isInsideHouse(context)) { factors.put("observation depuis l'abri", 12.0 + context.personality().getPrudence() * 0.25); }
         this.addLearning(context, situationKey, ActionType.VOIR, factors);
         return this.weighted(new PeonAction(ActionType.VOIR, null, null, PeonPurpose.SURVIVRE, ""), factors);
     }
@@ -155,6 +171,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         factors.put("inaction", -8.0);
         if (context.concealedByTree() && enemy != null && this.isDangerous(context, enemy.healthPoints(), enemy.level())) { factors.put("camouflage", context.personality().getPrudence() * 0.35); }
         if (context.concealedByTree() && grave != null) { factors.put("vigilance près d'une tombe", context.personality().getPrudence() * 0.20); }
+        if (this.isInsideHouse(context)) {
+            factors.put("protection contre les ennemis", enemy == null ? context.personality().getPrudence() * 0.18 : context.personality().getPrudence() * 0.65);
+            factors.put("économie de faim", this.defaults.getHungerHealthLossPerTurn() * (100 - this.defaults.getHouseHungerPercentage()) / 100.0 * 3.0);
+        }
         this.addLearning(context, situationKey, ActionType.NE_RIEN_FAIRE, factors);
         return this.weighted(PeonAction.idle(PeonPurpose.SURVIVRE, ""), factors);
     }
@@ -214,6 +234,12 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         });
         return newest.values().stream().min(Comparator.comparingInt(observation -> observation.position().distanceTo(context.position()))).orElse(null);
     }
+
+    private PeonDecisionContext.ObservedHouse closestKnownSafeHouse(PeonDecisionContext context) {
+        return context.knownHouses().stream().filter(house -> !house.occupied() || context.teamId().equals(house.hostTeamId())).min(Comparator.comparingInt(house -> house.position().distanceTo(context.position()))).orElse(null);
+    }
+
+    private boolean isInsideHouse(PeonDecisionContext context) { return context.house() != null && context.house().actorInside(); }
 
     private boolean isDangerous(PeonDecisionContext context, int enemyHealth, int enemyLevel) {
         double healthPercentage = this.healthPercentage(context);

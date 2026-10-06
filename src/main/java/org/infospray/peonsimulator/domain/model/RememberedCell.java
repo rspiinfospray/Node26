@@ -15,6 +15,7 @@ public class RememberedCell {
     private List<UUID> rememberedOccupants = new ArrayList<>();
     private List<RememberedPeonObservation> rememberedPeons = new ArrayList<>();
     private List<RememberedGraveObservation> rememberedGraves = new ArrayList<>();
+    private RememberedHouseObservation rememberedHouse;
 
     public RememberedCell() {
     }
@@ -50,6 +51,7 @@ public class RememberedCell {
     public List<UUID> getRememberedOccupants() { return this.rememberedOccupants; }
     public List<RememberedPeonObservation> getRememberedPeons() { return this.rememberedPeons; }
     public List<RememberedGraveObservation> getRememberedGraves() { return this.rememberedGraves; }
+    public RememberedHouseObservation getRememberedHouse() { return this.rememberedHouse; }
     public void setCoordinate(HexCoordinate coordinate) { this.coordinate = coordinate; }
     public void setTerrain(TerrainType terrain) { this.terrain = terrain; }
     public void setVisited(boolean visited) { this.visited = visited; }
@@ -60,6 +62,7 @@ public class RememberedCell {
     public void setRememberedOccupants(List<UUID> value) { this.rememberedOccupants = new ArrayList<>(value); }
     public void setRememberedPeons(List<RememberedPeonObservation> value) { this.rememberedPeons = value == null ? new ArrayList<>() : new ArrayList<>(value); }
     public void setRememberedGraves(List<RememberedGraveObservation> value) { this.rememberedGraves = value == null ? new ArrayList<>() : new ArrayList<>(value); }
+    public void setRememberedHouse(RememberedHouseObservation value) { this.rememberedHouse = value; }
 
     public void refresh(Cell cell, boolean nowVisited, long sequence) {
         this.refresh(cell, nowVisited, sequence, List.of());

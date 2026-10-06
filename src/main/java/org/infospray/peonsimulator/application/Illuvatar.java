@@ -19,6 +19,7 @@ import org.infospray.peonsimulator.domain.model.HexCoordinate;
 import org.infospray.peonsimulator.domain.model.Grave;
 import org.infospray.peonsimulator.domain.model.House;
 import org.infospray.peonsimulator.domain.model.ItemType;
+import org.infospray.peonsimulator.domain.model.RememberedHouseObservation;
 import org.infospray.peonsimulator.domain.model.Peon;
 import org.infospray.peonsimulator.domain.model.ActionExperience;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
@@ -304,9 +305,10 @@ public class Illuvatar {
         List<PeonDecisionContext.ObservedPeon> occupants = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getInsideHouseId() == null || other.getInsideHouseId().equals(peon.getInsideHouseId())).map(other -> new PeonDecisionContext.ObservedPeon(other.getId(), other.getTeamId(), other.getHealthPoints(), other.getLevel())).toList();
         List<HexCoordinate> neighbors = peon.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> { RememberedCell remembered = peon.getMentalMap().get(World.key(coordinate)); return remembered != null && remembered.getTerrain() != TerrainType.ROCK; }).toList();
         Peon houseHost = house == null || house.getHostPeonId() == null ? null : world.getPeons().get(house.getHostPeonId());
-        PeonDecisionContext.ObservedHouse observedHouse = house == null ? null : new PeonDecisionContext.ObservedHouse(house.getId(), house.getHostPeonId(), houseHost == null ? null : houseHost.getTeamId(), house.contains(peon.getId()), !house.isEmpty());
+        PeonDecisionContext.ObservedHouse observedHouse = house == null ? null : new PeonDecisionContext.ObservedHouse(house.getId(), house.getHostPeonId(), houseHost == null ? null : houseHost.getTeamId(), house.getPosition(), house.contains(peon.getId()), !house.isEmpty());
+        List<PeonDecisionContext.ObservedHouse> knownHouses = peon.getMentalMap().values().stream().map(RememberedCell::getRememberedHouse).filter(java.util.Objects::nonNull).map(remembered -> new PeonDecisionContext.ObservedHouse(remembered.houseId(), null, remembered.hostTeamId(), remembered.position(), false, remembered.occupied())).toList();
         boolean buildable = current.getTerrain() == TerrainType.PLAIN && house == null && current.getOccupantPeonIds().stream().allMatch(peon.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(peon.getPosition()));
-        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), buildable, observedHouse);
+        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), buildable, observedHouse, knownHouses);
     }
 
     private void resolveAction(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -514,6 +516,12 @@ public class Illuvatar {
             return new RememberedGraveObservation(dead.getId(), dead.getTeamId(), dead.getTeamId().equals(observer.getTeamId()) ? PeonRelation.ALLY : PeonRelation.ENEMY, grave.position(), grave.deathRound(), grave.deathSequence(), sequence);
         }).toList();
         observer.remember(cell, visited, sequence, observations, graveObservations);
+        House observedHouse = world.houseAt(cell.getCoordinate());
+        RememberedCell memory = observer.getMentalMap().get(World.key(cell.getCoordinate()));
+        if (observedHouse == null) { memory.setRememberedHouse(null); } else {
+            Peon host = observedHouse.getHostPeonId() == null ? null : world.getPeons().get(observedHouse.getHostPeonId());
+            memory.setRememberedHouse(new RememberedHouseObservation(observedHouse.getId(), observedHouse.getPosition(), host == null ? null : host.getTeamId(), !observedHouse.isEmpty(), sequence));
+        }
     }
 
     private List<HexCoordinate> visibleCoordinates(World world, Peon peon) {
