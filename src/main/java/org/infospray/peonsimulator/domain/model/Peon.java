@@ -124,12 +124,16 @@ public class Peon {
     }
 
     public void remember(Cell cell, boolean visited, long sequence, List<RememberedPeonObservation> rememberedPeons) {
+        this.remember(cell, visited, sequence, rememberedPeons, List.of());
+    }
+
+    public void remember(Cell cell, boolean visited, long sequence, List<RememberedPeonObservation> rememberedPeons, List<RememberedGraveObservation> rememberedGraves) {
         String key = cell.getCoordinate().q() + ":" + cell.getCoordinate().r();
         RememberedCell remembered = this.mentalMap.get(key);
         if (remembered == null) {
-            this.mentalMap.put(key, new RememberedCell(cell, visited, sequence, rememberedPeons));
+            this.mentalMap.put(key, new RememberedCell(cell, visited, sequence, rememberedPeons, rememberedGraves));
         } else {
-            remembered.refresh(cell, visited, sequence, rememberedPeons);
+            remembered.refresh(cell, visited, sequence, rememberedPeons, rememberedGraves);
         }
     }
 }

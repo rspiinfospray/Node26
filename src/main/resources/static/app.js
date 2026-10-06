@@ -261,6 +261,7 @@ function drawWorld() {
         Object.values(world.peons).filter(peon => peon.alive).forEach(peon => drawPeon(peon, world, geo));
     }
     else if (selected) {
+        drawRememberedGraves(selected, geo);
         drawRememberedPeons(selected, world, geo);
         drawPeon(selected, world, geo);
     }
@@ -314,9 +315,9 @@ function drawFood(cell, point, geo) {
     }
 }
 
-function gravePresentations(world, geo) {
+function positionedGraves(graves, geo) {
     const groups = new Map();
-    Object.values(world.graves || {}).forEach(grave => {
+    graves.forEach(grave => {
         const key = `${grave.position.q}:${grave.position.r}`;
         groups.set(key, [...(groups.get(key) || []), grave]);
     });
@@ -328,12 +329,31 @@ function gravePresentations(world, geo) {
     }));
 }
 
+function gravePresentations(world, geo) { return positionedGraves(Object.values(world.graves || {}), geo); }
+
+function rememberedGravePresentations(selected, geo) {
+    const newestByPeon = new Map();
+    Object.values(selected.mentalMap || {}).flatMap(memory => memory.rememberedGraves || []).forEach(grave => {
+        const previous = newestByPeon.get(grave.peonId);
+        if (!previous || grave.observedAtSequence > previous.observedAtSequence) newestByPeon.set(grave.peonId, grave);
+    });
+    return positionedGraves([...newestByPeon.values()], geo);
+}
+
 function drawGraves(world, geo) {
-    gravePresentations(world, geo).forEach(({ grave, point }) => {
+    drawGravePresentations(gravePresentations(world, geo), geo, false);
+}
+
+function drawRememberedGraves(selected, geo) {
+    drawGravePresentations(rememberedGravePresentations(selected, geo), geo, true);
+}
+
+function drawGravePresentations(presentations, geo, remembered) {
+    presentations.forEach(({ grave, point }) => {
         const sprite = new PIXI.Sprite(assets.grave);
         const size = Math.max(7, geo.size * .9);
         sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
-        sprite.alpha = grave.peonId === state.selectedPeonId ? 1 : .88;
+        sprite.alpha = remembered ? .5 : grave.peonId === state.selectedPeonId ? 1 : .88;
         if (grave.peonId === state.selectedPeonId) {
             const selection = new PIXI.Graphics().circle(point.x, point.y, size * .46).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .08) });
             pixiApp.stage.addChild(selection);
@@ -624,7 +644,7 @@ canvas.addEventListener('click', event => {
     const selected = state.world.peons[state.selectedPeonId];
     const mental = $('#mentalMapToggle').checked && selected?.alive;
     const candidates = mental
-        ? [{ peon:selected, position:selected.position }, ...rememberedPeonPresentations(selected).map(memory => ({ peon:state.world.peons[memory.peonId], position:memory.position })).filter(candidate => candidate.peon)]
+        ? [{ peon:selected, position:selected.position }, ...rememberedPeonPresentations(selected).map(memory => ({ peon:state.world.peons[memory.peonId], position:memory.position })).filter(candidate => candidate.peon), ...rememberedGravePresentations(selected, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point })).filter(candidate => candidate.peon)]
         : [...Object.values(state.world.peons).filter(peon => peon.alive).map(peon => ({ peon, position:peon.position })), ...gravePresentations(state.world, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point }))];
     const nearest = candidates.map(candidate => ({ peon:candidate.peon, point:candidate.point || centerOf(candidate.position, viewport._geometry) })).filter(candidate => candidate.peon).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
     if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) { state.selectedPeonId = nearest.peon.id; render(); }

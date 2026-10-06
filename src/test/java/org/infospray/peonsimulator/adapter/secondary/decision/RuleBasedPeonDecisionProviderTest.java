@@ -10,6 +10,7 @@ import org.infospray.peonsimulator.domain.model.HexCoordinate;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
 import org.infospray.peonsimulator.domain.model.PeonRelation;
 import org.infospray.peonsimulator.domain.model.RememberedCell;
+import org.infospray.peonsimulator.domain.model.RememberedGraveObservation;
 import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.TerrainType;
 import org.junit.jupiter.api.Test;
@@ -80,6 +81,40 @@ class RuleBasedPeonDecisionProviderTest {
         PeonDecision decision = this.provider.decide(context);
         assertThat(decision.action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
         assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.VOIR).findFirst().orElseThrow().factors()).containsEntry("perception encore fraîche", -12.0);
+    }
+
+    @Test
+    void shouldMoveAwayFromKnownGraveWhenPrudent() {
+        PeonDecision decision = this.decisionNearGrave(new PeonPersonality(80, 10, 10, 50));
+
+        double toward = this.movementScore(decision, new HexCoordinate(3, 2));
+        double away = this.movementScore(decision, new HexCoordinate(1, 2));
+        assertThat(away).isGreaterThan(toward);
+        assertThat(decision.situationKey()).contains("TOMBE_CONNUE");
+    }
+
+    @Test
+    void shouldInvestigateKnownGraveWhenCuriousAndAggressive() {
+        PeonDecision decision = this.decisionNearGrave(new PeonPersonality(10, 70, 90, 50));
+
+        double toward = this.movementScore(decision, new HexCoordinate(3, 2));
+        double away = this.movementScore(decision, new HexCoordinate(1, 2));
+        assertThat(toward).isGreaterThan(away);
+    }
+
+    private PeonDecision decisionNearGrave(PeonPersonality personality) {
+        UUID peonId = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID();
+        HexCoordinate gravePosition = new HexCoordinate(3, 2);
+        Cell graveCell = new Cell(gravePosition, TerrainType.PLAIN, 0);
+        RememberedGraveObservation grave = new RememberedGraveObservation(UUID.randomUUID(), UUID.randomUUID(), PeonRelation.ENEMY, gravePosition, 4, 8, 9);
+        RememberedCell memory = new RememberedCell(graveCell, false, 9, List.of(), List.of(grave));
+        PeonDecisionContext context = new PeonDecisionContext(peonId, teamId, 100, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, personality, Map.of(), Map.of("3:2", memory), List.of(), 0, List.of(new HexCoordinate(3, 2), new HexCoordinate(1, 2)), 10, 9);
+        return this.provider.decide(context);
+    }
+
+    private double movementScore(PeonDecision decision, HexCoordinate destination) {
+        return decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.SE_DEPLACER && destination.equals(candidate.destination())).findFirst().orElseThrow().score();
     }
 
     private PeonDecisionContext context(int health, boolean concealed, Map<String, ActionKnowledge> learning, Map<String, RememberedCell> mentalMap, List<PeonDecisionContext.ObservedPeon> occupants, int food, List<HexCoordinate> neighbors) {

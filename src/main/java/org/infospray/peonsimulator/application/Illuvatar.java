@@ -22,6 +22,7 @@ import org.infospray.peonsimulator.domain.model.ActionExperience;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
 import org.infospray.peonsimulator.domain.model.PeonRelation;
 import org.infospray.peonsimulator.domain.model.RememberedCell;
+import org.infospray.peonsimulator.domain.model.RememberedGraveObservation;
 import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.Team;
 import org.infospray.peonsimulator.domain.model.TerrainType;
@@ -424,7 +425,11 @@ public class Illuvatar {
     private void remember(World world, Peon observer, Cell cell, boolean visited, long sequence) {
         boolean occupantsHiddenByTrees = cell.getTerrain() == TerrainType.TREE && !cell.getCoordinate().equals(observer.getPosition());
         List<RememberedPeonObservation> observations = occupantsHiddenByTrees ? List.of() : cell.getOccupantPeonIds().stream().map(world.getPeons()::get).filter(java.util.Objects::nonNull).map(observed -> new RememberedPeonObservation(observed.getId(), observed.getTeamId(), observed.getTeamId().equals(observer.getTeamId()) ? PeonRelation.ALLY : PeonRelation.ENEMY, cell.getCoordinate(), observed.getHealthPoints(), observed.getLevel(), sequence)).toList();
-        observer.remember(cell, visited, sequence, observations);
+        List<RememberedGraveObservation> graveObservations = world.getGraves().values().stream().filter(grave -> grave.position().equals(cell.getCoordinate())).map(grave -> world.getPeons().get(grave.peonId())).filter(java.util.Objects::nonNull).map(dead -> {
+            Grave grave = world.getGraves().get(dead.getId());
+            return new RememberedGraveObservation(dead.getId(), dead.getTeamId(), dead.getTeamId().equals(observer.getTeamId()) ? PeonRelation.ALLY : PeonRelation.ENEMY, grave.position(), grave.deathRound(), grave.deathSequence(), sequence);
+        }).toList();
+        observer.remember(cell, visited, sequence, observations, graveObservations);
     }
 
     private List<HexCoordinate> visibleCoordinates(World world, Peon peon) {
