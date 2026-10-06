@@ -250,7 +250,7 @@ function drawWorld() {
     if (!world) { pixiApp.render(); return; }
     const geo = geometry(world, rect);
     const selected = world.peons[state.selectedPeonId];
-    const mental = $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
+    const mental = !state.selectedHouseId && $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
     Object.values(world.cells).forEach(cell => {
         const known = !mental || mental[`${cell.coordinate.q}:${cell.coordinate.r}`];
         const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, occupantPeonIds: known.rememberedOccupants } : cell;
@@ -572,6 +572,7 @@ function animateLevelUp(event) {
 
 function renderSelection() {
     const house = state.world?.houses?.[state.selectedHouseId];
+    $('#mentalMapToggle').disabled = Boolean(house);
     $('#inspectorTitle').textContent = house ? 'MAISON SÉLECTIONNÉE' : 'PEON SÉLECTIONNÉ';
     $('#houseDetails').hidden = !house;
     if (house) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderHouse(house); return; }
@@ -706,7 +707,7 @@ canvas.addEventListener('click', event => {
     if (!state.world || !viewport._geometry) return;
     const rect = canvas.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top;
     const selected = state.world.peons[state.selectedPeonId];
-    const mental = $('#mentalMapToggle').checked && selected?.alive;
+    const mental = !state.selectedHouseId && $('#mentalMapToggle').checked && selected?.alive;
     const peonCandidates = mental
         ? [{ peon:selected, position:selected.position }, ...rememberedPeonPresentations(selected).map(memory => ({ peon:state.world.peons[memory.peonId], position:memory.position })).filter(candidate => candidate.peon), ...rememberedGravePresentations(selected, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point })).filter(candidate => candidate.peon)]
         : [...Object.values(state.world.peons).filter(peon => peon.alive && !peon.insideHouseId).map(peon => ({ peon, position:peon.position })), ...gravePresentations(state.world, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point }))];
@@ -714,7 +715,7 @@ canvas.addEventListener('click', event => {
     const candidates = [...peonCandidates.map(candidate => ({ ...candidate, kind:'peon' })), ...houseCandidates.map(candidate => ({ ...candidate, kind:'house' }))];
     const nearest = candidates.map(candidate => ({ ...candidate, point:candidate.point || centerOf(candidate.position, viewport._geometry) })).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
     if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) {
-        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; }
+        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; $('#mentalMapToggle').checked = false; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; }
         render();
     }
 });
