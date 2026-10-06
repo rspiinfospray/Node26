@@ -37,6 +37,12 @@ public class GameDefaultsProperties {
     private double learningRate = 0.20;
     private int explorationPercentage = 10;
     private int actionHistoryLimit = 100;
+    private int treeHealthPoints = 100;
+    private int woodPerChop = 25;
+    private int woodRequiredForHouse = 200;
+    private int chopWoodExperienceGain = 20;
+    private int buildHouseExperienceGain = 70;
+    private int houseHungerPercentage = 50;
     private int defaultZoomPercent = 170;
 
     public int getWorldWidth() { return this.worldWidth; }
@@ -103,4 +109,16 @@ public class GameDefaultsProperties {
     public void setActionHistoryLimit(int value) { this.actionHistoryLimit = value; }
     public int getDefaultZoomPercent() { return this.defaultZoomPercent; }
     public void setDefaultZoomPercent(int value) { this.defaultZoomPercent = value; }
+    public int getTreeHealthPoints() { return this.treeHealthPoints; }
+    public void setTreeHealthPoints(int value) { this.treeHealthPoints = value; }
+    public int getWoodPerChop() { return this.woodPerChop; }
+    public void setWoodPerChop(int value) { this.woodPerChop = value; }
+    public int getWoodRequiredForHouse() { return this.woodRequiredForHouse; }
+    public void setWoodRequiredForHouse(int value) { this.woodRequiredForHouse = value; }
+    public int getChopWoodExperienceGain() { return this.chopWoodExperienceGain; }
+    public void setChopWoodExperienceGain(int value) { this.chopWoodExperienceGain = value; }
+    public int getBuildHouseExperienceGain() { return this.buildHouseExperienceGain; }
+    public void setBuildHouseExperienceGain(int value) { this.buildHouseExperienceGain = value; }
+    public int getHouseHungerPercentage() { return this.houseHungerPercentage; }
+    public void setHouseHungerPercentage(int value) { this.houseHungerPercentage = value; }
 }

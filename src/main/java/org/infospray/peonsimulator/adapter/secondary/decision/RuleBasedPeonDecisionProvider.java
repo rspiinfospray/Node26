@@ -35,12 +35,15 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         String situationKey = this.situationKey(context);
         List<WeightedAction> candidates = new ArrayList<>();
         if (context.foodOnCurrentCell() > 0) { candidates.add(this.scoreEat(context, situationKey)); }
+        if (context.currentTerrain() == TerrainType.TREE && context.treeHealthPoints() > 0) { candidates.add(this.scoreChopWood(context, situationKey)); }
+        if (context.buildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForHouse()) { candidates.add(this.scoreBuildHouse(context, situationKey)); }
         context.peonsOnCurrentCell().stream().filter(peon -> !peon.teamId().equals(context.teamId())).forEach(enemy -> candidates.add(this.scoreAttack(context, enemy, situationKey)));
-        if (context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId()))) { candidates.add(this.scoreCommunicate(context, situationKey)); }
+        if (context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId())) || context.house() != null && context.house().hostTeamId() != null && context.house().hostTeamId().equals(context.teamId())) { candidates.add(this.scoreCommunicate(context, situationKey)); }
         RememberedPeonObservation knownEnemy = this.closestKnownEnemy(context);
         HexCoordinate knownFood = this.closestKnownFood(context);
+        HexCoordinate knownTree = this.closestKnownTree(context);
         RememberedGraveObservation knownGrave = this.closestKnownGrave(context);
-        context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, knownFood, knownGrave, situationKey)));
+        context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, knownFood, knownTree, knownGrave, situationKey)));
         candidates.add(this.scoreSee(context, knownEnemy, knownGrave, situationKey));
         candidates.add(this.scoreIdle(context, knownEnemy, knownGrave, situationKey));
         candidates.sort(Comparator.comparingDouble(WeightedAction::score).reversed());
@@ -84,7 +87,25 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         return this.weighted(new PeonAction(ActionType.COMMUNIQUER, null, null, PeonPurpose.AIDER_LES_ALLIES, ""), factors);
     }
 
-    private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, HexCoordinate food, RememberedGraveObservation grave, String situationKey) {
+    private WeightedAction scoreChopWood(PeonDecisionContext context, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("ingéniosité", context.personality().getIngenuity() * 0.55);
+        factors.put("expérience", this.defaults.getChopWoodExperienceGain() * 0.45);
+        factors.put("besoin de bois", Math.max(0, this.defaults.getWoodRequiredForHouse() - context.woodQuantity()) * 0.18);
+        this.addLearning(context, situationKey, ActionType.COUPER_DU_BOIS, factors);
+        return this.weighted(new PeonAction(ActionType.COUPER_DU_BOIS, null, null, PeonPurpose.SURVIVRE, ""), factors);
+    }
+
+    private WeightedAction scoreBuildHouse(PeonDecisionContext context, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("ingéniosité", context.personality().getIngenuity() * 0.75);
+        factors.put("abri", (100.0 - this.healthPercentage(context)) * 0.35 + context.personality().getPrudence() * 0.35);
+        factors.put("expérience", this.defaults.getBuildHouseExperienceGain() * 0.45);
+        this.addLearning(context, situationKey, ActionType.CONSTRUIRE_MAISON, factors);
+        return this.weighted(new PeonAction(ActionType.CONSTRUIRE_MAISON, null, null, PeonPurpose.SURVIVRE, ""), factors);
+    }
+
+    private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, HexCoordinate food, HexCoordinate tree, RememberedGraveObservation grave, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
         RememberedCell destinationMemory = context.mentalMap().get(destination.q() + ":" + destination.r());
         factors.put("expérience", this.defaults.getMoveExperienceGain() * 0.35);
@@ -93,6 +114,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             int progress = context.position().distanceTo(food) - destination.distanceTo(food);
             double need = (double) (context.maxHealthPoints() - context.healthPoints()) / context.maxHealthPoints();
             factors.put("recherche de nourriture", progress * need * 55);
+        }
+        if (tree != null && context.woodQuantity() < this.defaults.getWoodRequiredForHouse()) {
+            int progress = context.position().distanceTo(tree) - destination.distanceTo(tree);
+            factors.put("recherche de bois", progress * context.personality().getIngenuity() * 0.32);
         }
         if (enemy != null) {
             int distanceChange = destination.distanceTo(enemy.position()) - context.position().distanceTo(enemy.position());
@@ -137,7 +162,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     private void addLearning(PeonDecisionContext context, String situationKey, ActionType actionType, Map<String, Double> factors) {
         ActionKnowledge knowledge = context.learnedActions().get(situationKey + "|" + actionType.name());
         if (knowledge == null) {
-            String legacySituationKey = situationKey.replace(":AUCUNE_TOMBE_CONNUE", "").replace(":TOMBE_CONNUE", "");
+            String legacySituationKey = situationKey.replace(":AUCUNE_TOMBE_CONNUE", "").replace(":TOMBE_CONNUE", "").replace(":BOIS_INCOMPLET", "").replace(":BOIS_COMPLET", "").replace(":SANS_ABRI", "").replace(":ABRITE", "");
             knowledge = context.learnedActions().get(legacySituationKey + "|" + actionType.name());
         }
         if (knowledge != null) { factors.put("expérience passée", knowledge.getExpectedReward()); }
@@ -159,11 +184,17 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         String company = !enemies.isEmpty() ? "AVEC_ENNEMI" : context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId())) ? "AVEC_ALLIE" : "SEUL";
         String food = context.foodOnCurrentCell() > 0 ? "NOURRITURE_PRESENTE" : this.closestKnownFood(context) != null ? "NOURRITURE_CONNUE" : "NOURRITURE_INCONNUE";
         String grave = this.closestKnownGrave(context) == null ? "AUCUNE_TOMBE_CONNUE" : "TOMBE_CONNUE";
-        return health + ":" + company + ":" + food + ":" + grave + ":" + (context.concealedByTree() ? "ARBRE" : "DECOUVERT");
+        String shelter = context.house() != null && context.house().actorInside() ? "ABRITE" : "SANS_ABRI";
+        String wood = context.woodQuantity() >= this.defaults.getWoodRequiredForHouse() ? "BOIS_COMPLET" : "BOIS_INCOMPLET";
+        return health + ":" + company + ":" + food + ":" + grave + ":" + wood + ":" + shelter + ":" + (context.concealedByTree() ? "ARBRE" : "DECOUVERT");
     }
 
     private HexCoordinate closestKnownFood(PeonDecisionContext context) {
         return context.mentalMap().values().stream().filter(cell -> cell.getRememberedFoodQuantity() > 0).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(context.position()))).map(RememberedCell::getCoordinate).orElse(null);
+    }
+
+    private HexCoordinate closestKnownTree(PeonDecisionContext context) {
+        return context.mentalMap().values().stream().filter(cell -> cell.getTerrain() == TerrainType.TREE).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(context.position()))).map(RememberedCell::getCoordinate).orElse(null);
     }
 
     private RememberedPeonObservation closestKnownEnemy(PeonDecisionContext context) {

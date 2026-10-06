@@ -1,11 +1,11 @@
-const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, selectedHouseId: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const viewport = $('#worldViewport');
 const pixiApp = new PIXI.Application();
 await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
@@ -75,6 +75,7 @@ async function selectWorld(worldId) {
     state.historical = false;
     resetView();
     state.selectedPeonId = Object.values(state.world.peons).find(peon => peon.alive)?.id || null;
+    state.selectedHouseId = null;
     connectStream(worldId);
     render();
 }
@@ -159,6 +160,7 @@ function render() {
         $('#liveButton').disabled = true;
         $('#peonEmpty').hidden = false;
         $('#peonDetails').hidden = true;
+        $('#houseDetails').hidden = true;
         $('#eventCount').textContent = '0';
         $('#eventLog').innerHTML = '';
         return;
@@ -178,7 +180,7 @@ function render() {
     $('#timelinePlayButton').disabled = (state.liveWorld?.sequenceNumber || 0) === 0;
     $('#liveButton').disabled = !state.historical;
     drawWorld();
-    renderPeon();
+    renderSelection();
     renderEvents();
 }
 
@@ -256,9 +258,10 @@ function drawWorld() {
         drawCell(rendered, point, geo, Boolean(known));
         if (known && rendered.foodQuantity > 0) { drawFood(rendered, point, geo); }
     });
+    Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
     if (!mental) {
         drawGraves(world, geo);
-        Object.values(world.peons).filter(peon => peon.alive).forEach(peon => drawPeon(peon, world, geo));
+        Object.values(world.peons).filter(peon => peon.alive && !peon.insideHouseId).forEach(peon => drawPeon(peon, world, geo));
     }
     else if (selected) {
         drawRememberedGraves(selected, geo);
@@ -267,6 +270,15 @@ function drawWorld() {
     }
     viewport._geometry = geo;
     pixiApp.render();
+}
+
+function drawHouse(house, geo) {
+    const point = centerOf(house.position, geo);
+    if (house.id === state.selectedHouseId) { pixiApp.stage.addChild(new PIXI.Graphics().circle(point.x, point.y, Math.max(7, geo.size * .72)).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .09) })); }
+    const sprite = new PIXI.Sprite(assets.house);
+    const size = Math.max(10, geo.size * 1.55);
+    sprite.anchor.set(.5, .58); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+    pixiApp.stage.addChild(sprite);
 }
 
 function rememberedPeonPresentations(selected) {
@@ -411,12 +423,14 @@ function playActionAnimations(events) {
         if (event.eventType === 'PEON_COMMUNICATED') animateCommunication(event);
         if (event.eventType === 'PEON_SAW') animateObservation(event, delay);
         if (event.eventType === 'PEON_ATTACKED') animateAttack(event);
+        if (event.eventType === 'PEON_CHOPPED_WOOD') animateChopWood(event);
         if (event.eventType === 'PEON_LEVELED_UP') animateLevelUp(event);
     });
 }
 
 function queueAnimation(duration, delay, update, complete = () => {}) {
-    animationState.animations.push({ duration, delay, update, complete, startedAt:null });
+    const multiplier = state.simulationSpeed?.multiplier || 1;
+    animationState.animations.push({ duration:duration / multiplier, delay:delay / multiplier, update, complete, startedAt:null });
     if (animationState.frame === null) animationState.frame = requestAnimationFrame(runAnimations);
 }
 
@@ -510,6 +524,23 @@ function animateAttack(event) {
     });
 }
 
+function animateChopWood(event) {
+    const actor = animationState.peons.get(event.peonId);
+    if (!actor) return;
+    const axe = new PIXI.Container();
+    const size = viewport._geometry.size;
+    const handle = new PIXI.Graphics().roundRect(-size * .055, -size * .52, size * .11, size * .72, size * .04).fill('#7b4b25');
+    const head = new PIXI.Graphics().poly([-size * .08, -size * .5, size * .34, -size * .62, size * .37, -size * .3, -size * .08, -size * .34]).fill('#c9d0d0').stroke({ color:'#4c5558', width:Math.max(1, size * .05) });
+    const actorOriginX = actor.x;
+    axe.addChild(handle, head); axe.position.set(size * .36, -size * .3); axe.rotation = -.8; actor.addChild(axe);
+    queueAnimation(520, 0, progress => {
+        const swing = Math.sin(Math.min(1, progress * 1.35) * Math.PI);
+        axe.rotation = -.8 + swing * 1.75;
+        actor.rotation = -swing * .1;
+        actor.x = actorOriginX + Math.sin(progress * Math.PI * 4) * size * .025;
+    }, () => { actor.x = actorOriginX; actor.rotation = 0; removeEffect(axe); });
+}
+
 function animateLevelUp(event) {
     const actor = animationState.peons.get(event.peonId);
     if (!actor) return;
@@ -539,6 +570,26 @@ function animateLevelUp(event) {
     }, () => removeEffect(celebration));
 }
 
+function renderSelection() {
+    const house = state.world?.houses?.[state.selectedHouseId];
+    $('#inspectorTitle').textContent = house ? 'MAISON SÉLECTIONNÉE' : 'PEON SÉLECTIONNÉ';
+    $('#houseDetails').hidden = !house;
+    if (house) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderHouse(house); return; }
+    renderPeon();
+}
+
+function renderHouse(house) {
+    const occupantIds = [...(house.occupantPeonIds || [])];
+    const occupants = occupantIds.map(id => state.world.peons[id]).filter(Boolean);
+    const host = house.hostPeonId ? state.world.peons[house.hostPeonId] : null;
+    $('#houseStatus').textContent = house.hostPeonId ? 'Occupée et protégée' : 'Vide · libre à la prise de possession';
+    $('#housePosition').textContent = `${house.position.q}, ${house.position.r}`;
+    $('#houseHost').textContent = host?.firstName || 'Aucun';
+    $('#houseOccupantCount').textContent = occupants.length;
+    $('#houseId').textContent = house.id;
+    $('#houseOccupants').innerHTML = occupants.length ? occupants.map(peon => { const team = state.world.teams[peon.teamId]; return `<button class="house-occupant" data-peon-id="${peon.id}"><span>${escapeHtml(peon.firstName)} · ${escapeHtml(team?.name || 'Sans équipe')}</span><i style="--team-color:${escapeHtml(team?.color || '#888')}"></i></button>`; }).join('') : '<p class="muted">Personne ne se trouve à l’intérieur.</p>';
+}
+
 function renderPeon() {
     const peon = state.world?.peons[state.selectedPeonId];
     $('#peonEmpty').hidden = Boolean(peon);
@@ -557,6 +608,8 @@ function renderPeon() {
     $('#damageValue').textContent = peon.attackDamage;
     $('#positionValue').textContent = `${peon.position.q}, ${peon.position.r}`;
     $('#memoryValue').textContent = Object.keys(peon.mentalMap || {}).length;
+    $('#woodValue').textContent = peon.inventory?.WOOD || 0;
+    $('#shelterValue').textContent = peon.insideHouseId ? 'À l’abri dans une maison · faim réduite de moitié' : 'À l’extérieur';
     renderPersonality(peon);
     renderPeonActions(peon);
     $('#peonId').textContent = peon.id;
@@ -564,7 +617,7 @@ function renderPeon() {
 
 function renderPersonality(peon) {
     const personality = peon.personality || { prudence:50, aggressiveness:50, curiosity:50, solidarity:50 };
-    const traits = [['Prudence', personality.prudence], ['Agressivité', personality.aggressiveness], ['Curiosité', personality.curiosity], ['Solidarité', personality.solidarity]];
+    const traits = [['Prudence', personality.prudence], ['Agressivité', personality.aggressiveness], ['Curiosité', personality.curiosity], ['Solidarité', personality.solidarity], ['Ingéniosité', personality.ingenuity ?? 50]];
     $('#personalityTraits').innerHTML = traits.map(([label, value]) => `<div class="personality-trait"><span>${label}</span><div><i style="width:${Math.max(0, Math.min(100, value))}%"></i></div><strong>${value}</strong></div>`).join('');
     const history = peon.actionHistory || [];
     const learned = Object.values(peon.learnedActions || {});
@@ -592,7 +645,7 @@ function renderEvents() {
 
 function visibleEvents() { return state.events.filter(event => event.sequenceNumber <= (state.world?.sequenceNumber ?? 0)); }
 function peonName(peonId) { return peonId ? state.world?.peons?.[peonId]?.firstName || state.liveWorld?.peons?.[peonId]?.firstName || `Peon ${peonId.slice(0, 8)}` : null; }
-function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
+function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
 function friendlyPurpose(purpose) { return ({ SURVIVRE:'survivre', GAGNER_DES_NIVEAUX:'gagner des niveaux', AIDER_LES_ALLIES:'aider les autres peons' })[purpose] || purpose?.replaceAll('_', ' ').toLowerCase(); }
 function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
 function coordinate(value) { return value ? `(${value.q}, ${value.r})` : ''; }
@@ -612,6 +665,17 @@ function eventDescription(event) {
         case 'PEON_MOVEMENT_COST_APPLIED': return `Effort du déplacement : −${payload.loss} PV, ${payload.healthBefore} → ${payload.healthAfter}.`;
         case 'PEON_DIED': return `Mort causée par ${friendlyReason(payload.reason)} en ${coordinate(payload.position)}.`;
         case 'PEON_COMMUNICATED': return `Souvenirs partagés avec ${payload.allyCount} allié(s).`;
+        case 'PEON_CHOPPED_WOOD': return `Bois récolté : +${payload.woodCollected}, inventaire ${payload.woodAfter}. PV de l’arbre : ${payload.treeHealthBefore} → ${payload.treeHealthAfter}.`;
+        case 'TREE_CUT_DOWN': return `L’arbre en ${coordinate(payload.position)} devient une plaine.`;
+        case 'HOUSE_BUILT': return `Maison construite en ${coordinate(payload.position)} avec ${payload.woodSpent} bois.`;
+        case 'HOUSE_CLAIMED': return `Maison vide prise en possession en ${coordinate(payload.position)}.`;
+        case 'PEON_ENTERED_HOUSE': return 'Le peon entre dans la maison.';
+        case 'PEON_LEFT_HOUSE': return 'Le peon quitte la maison.';
+        case 'HOUSE_EMPTIED': return 'La maison devient vide et peut être reprise.';
+        case 'HOUSE_ENTRY_REQUESTED': return `Demande d’entrée adressée à ${peonName(payload.hostPeonId)}.`;
+        case 'HOUSE_ENTRY_ACCEPTED': return `Entrée de ${peonName(payload.guestPeonId)} acceptée.`;
+        case 'HOUSE_ENTRY_REFUSED': return `Entrée de ${peonName(payload.guestPeonId)} refusée.`;
+        case 'HOUSE_ENTRY_INVITED': return `${peonName(payload.guestPeonId)} est invité dans la maison.`;
         case 'PEON_IDLED': return 'Le peon reste sur place.';
         case 'PEON_ACTION_REJECTED': return `${friendlyAction(payload.actionType)} impossible : ${friendlyReason(payload.reason)}.`;
         case 'PEON_LEARNED': return `Leçon : ${payload.reward >= 0 ? '+' : ''}${payload.reward} · valeur apprise ${Number(payload.expectedReward).toFixed(1)} pour ${friendlyAction(payload.actionType)}.`;
@@ -643,11 +707,22 @@ canvas.addEventListener('click', event => {
     const rect = canvas.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top;
     const selected = state.world.peons[state.selectedPeonId];
     const mental = $('#mentalMapToggle').checked && selected?.alive;
-    const candidates = mental
+    const peonCandidates = mental
         ? [{ peon:selected, position:selected.position }, ...rememberedPeonPresentations(selected).map(memory => ({ peon:state.world.peons[memory.peonId], position:memory.position })).filter(candidate => candidate.peon), ...rememberedGravePresentations(selected, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point })).filter(candidate => candidate.peon)]
-        : [...Object.values(state.world.peons).filter(peon => peon.alive).map(peon => ({ peon, position:peon.position })), ...gravePresentations(state.world, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point }))];
-    const nearest = candidates.map(candidate => ({ peon:candidate.peon, point:candidate.point || centerOf(candidate.position, viewport._geometry) })).filter(candidate => candidate.peon).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
-    if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) { state.selectedPeonId = nearest.peon.id; render(); }
+        : [...Object.values(state.world.peons).filter(peon => peon.alive && !peon.insideHouseId).map(peon => ({ peon, position:peon.position })), ...gravePresentations(state.world, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point }))];
+    const houseCandidates = Object.values(state.world.houses || {}).filter(house => !mental || selected?.mentalMap?.[`${house.position.q}:${house.position.r}`]).map(house => ({ house, position:house.position }));
+    const candidates = [...peonCandidates.map(candidate => ({ ...candidate, kind:'peon' })), ...houseCandidates.map(candidate => ({ ...candidate, kind:'house' }))];
+    const nearest = candidates.map(candidate => ({ ...candidate, point:candidate.point || centerOf(candidate.position, viewport._geometry) })).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
+    if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) {
+        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; }
+        render();
+    }
+});
+
+$('#houseOccupants').addEventListener('click', event => {
+    const button = event.target.closest('[data-peon-id]');
+    if (!button) return;
+    state.selectedPeonId = button.dataset.peonId; state.selectedHouseId = null; render();
 });
 
 canvas.addEventListener('pointerdown', event => { state.dragging = true; state.dragMoved = false; state.dragStart = { x:event.clientX, y:event.clientY, panX:state.panX, panY:state.panY }; canvas.classList.add('dragging'); canvas.setPointerCapture(event.pointerId); });

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Illuvatar — Simulateur de peons</title>
-    <link rel="stylesheet" href="/styles.css?v=20261004-17">
+    <link rel="stylesheet" href="/styles.css?v=20261006-18">
     <link rel="stylesheet" href="/journal.css?v=20261004-16">
 </head>
 <body>
@@ -48,7 +48,7 @@
                 <p>Créez un monde pour laisser Illuvatar commencer son œuvre.</p>
                 <button id="emptyCreateButton" class="button primary">Créer le monde</button>
             </div>
-            <div class="legend"><span><i class="plain"></i>Plaine</span><span><i class="rock"></i>Roche</span><span><i class="tree"></i>Arbre</span><span><i class="food"></i>Nourriture</span><span><i class="grave"></i>Tombe</span></div>
+            <div class="legend"><span><i class="plain"></i>Plaine</span><span><i class="rock"></i>Roche</span><span><i class="tree"></i>Arbre</span><span><i class="food"></i>Nourriture</span><span><i class="grave"></i>Tombe</span><span><i class="house"></i>Maison</span></div>
         </div>
         <div class="timeline">
             <strong class="timeline-title">Historique</strong>
@@ -61,13 +61,14 @@
 
     <aside class="side-panel">
         <section class="panel inspector">
-            <p class="section-label">PEON SÉLECTIONNÉ</p>
-            <div id="peonEmpty" class="muted">Cliquez sur un peon pour l’inspecter.</div>
+            <p id="inspectorTitle" class="section-label">PEON SÉLECTIONNÉ</p>
+            <div id="peonEmpty" class="muted">Cliquez sur un peon ou une maison pour l’inspecter.</div>
             <div id="peonDetails" hidden>
                 <div class="identity"><div id="peonAvatar" class="avatar"></div><div><h2 id="peonName"></h2><p id="peonTeam"></p></div></div>
                 <div class="meter-row"><span>PV</span><div class="meter"><i id="healthBar"></i></div><strong id="healthValue"></strong></div>
                 <div class="meter-row"><span>XP</span><div class="meter xp"><i id="xpBar"></i></div><strong id="xpValue"></strong></div>
                 <dl><div><dt>Niveau</dt><dd id="levelValue"></dd></div><div><dt>Dégâts</dt><dd id="damageValue"></dd></div><div><dt>Position</dt><dd id="positionValue"></dd></div><div><dt>Cases connues</dt><dd id="memoryValue"></dd></div></dl>
+                <div class="peon-inventory"><p class="section-label">INVENTAIRE</p><div class="inventory-item"><span>Bois</span><strong id="woodValue">0</strong></div><p id="shelterValue" class="learning-summary"></p></div>
                 <div class="peon-personality">
                     <div class="section-heading"><p class="section-label">TRAITS DE CARACTÈRE</p></div>
                     <div id="personalityTraits" class="personality-traits"></div>
@@ -78,6 +79,12 @@
                     <div id="peonActionLog" class="peon-action-log"></div>
                 </div>
                 <code id="peonId"></code>
+            </div>
+            <div id="houseDetails" hidden>
+                <div class="identity"><div class="avatar house-avatar"></div><div><h2>Maison en bois</h2><p id="houseStatus"></p></div></div>
+                <dl><div><dt>Position</dt><dd id="housePosition"></dd></div><div><dt>Propriétaire</dt><dd id="houseHost"></dd></div><div><dt>Occupants</dt><dd id="houseOccupantCount"></dd></div></dl>
+                <div class="peon-actions"><div class="section-heading"><p class="section-label">À L’INTÉRIEUR</p></div><div id="houseOccupants" class="house-occupants"></div></div>
+                <code id="houseId"></code>
             </div>
             <button id="openWorldJournalButton" class="button journal-button" type="button">Ouvrir le journal du monde <span id="eventCount">0</span></button>
         </section>
@@ -139,6 +146,6 @@
 </dialog>
 
 <script src="/vendor/pixi.min.js?v=8.22.0"></script>
-<script type="module" src="/app.js?v=20261006-25"></script>
+<script type="module" src="/app.js?v=20261006-28"></script>
 </body>
 </html>

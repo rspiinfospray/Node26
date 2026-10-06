@@ -30,6 +30,8 @@ public class Peon {
     private int experienceBeforeDecision;
     private int knownCellsBeforeDecision;
     private int lastObservationRound;
+    private Map<ItemType, Integer> inventory = new LinkedHashMap<>();
+    private UUID insideHouseId;
 
     public Peon() {
     }
@@ -62,6 +64,8 @@ public class Peon {
     public int getExperienceBeforeDecision() { return this.experienceBeforeDecision; }
     public int getKnownCellsBeforeDecision() { return this.knownCellsBeforeDecision; }
     public int getLastObservationRound() { return this.lastObservationRound; }
+    public Map<ItemType, Integer> getInventory() { return this.inventory; }
+    public UUID getInsideHouseId() { return this.insideHouseId; }
     public void setId(UUID id) { this.id = id; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
     public void setTeamId(UUID teamId) { this.teamId = teamId; }
@@ -83,6 +87,11 @@ public class Peon {
     public void setExperienceBeforeDecision(int value) { this.experienceBeforeDecision = value; }
     public void setKnownCellsBeforeDecision(int value) { this.knownCellsBeforeDecision = value; }
     public void setLastObservationRound(int value) { this.lastObservationRound = value; }
+    public void setInventory(Map<ItemType, Integer> value) { this.inventory = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setInsideHouseId(UUID value) { this.insideHouseId = value; }
+    public int itemCount(ItemType type) { return this.inventory.getOrDefault(type, 0); }
+    public void addItem(ItemType type, int quantity) { this.inventory.merge(type, Math.max(0, quantity), Integer::sum); }
+    public boolean removeItem(ItemType type, int quantity) { int current = this.itemCount(type); if (quantity < 0 || current < quantity) { return false; } this.inventory.put(type, current - quantity); return true; }
     public void heal(int amount) { this.setHealthPoints(this.healthPoints + amount); }
     public void hurt(int amount) { this.setHealthPoints(this.healthPoints - amount); }
     public int gainExperience(int amount, int maxHealthGainPerLevel, int attackDamageGainPerLevel) {

@@ -29,6 +29,7 @@ public class World {
     private Map<UUID, Team> teams = new LinkedHashMap<>();
     private Map<UUID, Peon> peons = new LinkedHashMap<>();
     private Map<UUID, Grave> graves = new LinkedHashMap<>();
+    private Map<UUID, House> houses = new LinkedHashMap<>();
 
     public World() {
     }
@@ -54,6 +55,7 @@ public class World {
     public Map<UUID, Team> getTeams() { return this.teams; }
     public Map<UUID, Peon> getPeons() { return this.peons; }
     public Map<UUID, Grave> getGraves() { return this.graves; }
+    public Map<UUID, House> getHouses() { return this.houses; }
     public void setId(UUID id) { this.id = id; }
     public void setName(String name) { this.name = name; }
     public void setStatus(WorldStatus status) { this.status = status; }
@@ -86,6 +88,8 @@ public class World {
     public void setGraves(Map<UUID, Grave> graves) {
         if (graves != null) { this.graves.putAll(graves); }
     }
+    public void setHouses(Map<UUID, House> value) { this.houses = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public House houseAt(HexCoordinate coordinate) { return this.houses.values().stream().filter(house -> house.getPosition().equals(coordinate)).findFirst().orElse(null); }
 
     public Cell cell(HexCoordinate coordinate) { return this.cells.get(key(coordinate)); }
     public boolean contains(HexCoordinate coordinate) { return this.cells.containsKey(key(coordinate)); }
