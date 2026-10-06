@@ -36,6 +36,8 @@ public class GameDefaultsProperties {
     private int communicationFrequency = 4;
     private double learningRate = 0.20;
     private int explorationPercentage = 10;
+    private int explorationMaximumScoreGap = 20;
+    private int criticalHealthExplorationThreshold = 20;
     private int actionHistoryLimit = 100;
     private int treeHealthPoints = 100;
     private int woodPerChop = 25;
@@ -105,6 +107,10 @@ public class GameDefaultsProperties {
     public void setLearningRate(double value) { this.learningRate = value; }
     public int getExplorationPercentage() { return this.explorationPercentage; }
     public void setExplorationPercentage(int value) { this.explorationPercentage = value; }
+    public int getExplorationMaximumScoreGap() { return this.explorationMaximumScoreGap; }
+    public void setExplorationMaximumScoreGap(int value) { this.explorationMaximumScoreGap = value; }
+    public int getCriticalHealthExplorationThreshold() { return this.criticalHealthExplorationThreshold; }
+    public void setCriticalHealthExplorationThreshold(int value) { this.criticalHealthExplorationThreshold = value; }
     public int getActionHistoryLimit() { return this.actionHistoryLimit; }
     public void setActionHistoryLimit(int value) { this.actionHistoryLimit = value; }
     public int getDefaultZoomPercent() { return this.defaultZoomPercent; }

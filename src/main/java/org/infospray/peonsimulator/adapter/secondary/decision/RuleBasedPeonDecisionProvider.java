@@ -48,9 +48,14 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         candidates.add(this.scoreSee(context, knownEnemy, knownGrave, situationKey));
         candidates.add(this.scoreIdle(context, knownEnemy, knownGrave, situationKey));
         candidates.sort(Comparator.comparingDouble(WeightedAction::score).reversed());
+        List<WeightedAction> safeCandidates = candidates.stream().filter(candidate -> !this.isPredictablyLethal(context, candidate.action())).toList();
+        List<WeightedAction> selectionCandidates = safeCandidates.isEmpty() ? candidates : safeCandidates;
+        WeightedAction best = selectionCandidates.get(0);
+        List<WeightedAction> explorableAlternatives = selectionCandidates.stream().skip(1).filter(candidate -> candidate.score() >= best.score() - this.defaults.getExplorationMaximumScoreGap()).toList();
         Random random = new Random(context.decisionSeed() ^ context.peonId().getMostSignificantBits() ^ context.sequenceNumber());
-        boolean exploration = candidates.size() > 1 && random.nextInt(100) < this.defaults.getExplorationPercentage();
-        WeightedAction selected = exploration ? candidates.get(1 + random.nextInt(candidates.size() - 1)) : candidates.get(0);
+        boolean criticalHealth = this.healthPercentage(context) <= this.defaults.getCriticalHealthExplorationThreshold();
+        boolean exploration = !criticalHealth && !explorableAlternatives.isEmpty() && random.nextInt(100) < this.defaults.getExplorationPercentage();
+        WeightedAction selected = exploration ? explorableAlternatives.get(random.nextInt(explorableAlternatives.size())) : best;
         PeonAction action = new PeonAction(selected.action().type(), selected.action().destination(), selected.action().targetPeonId(), selected.action().purpose(), this.explanation(selected, exploration));
         List<PeonDecision.CandidateScore> scores = candidates.stream().map(candidate -> new PeonDecision.CandidateScore(candidate.action().type(), candidate.action().destination(), candidate.action().targetPeonId(), this.round(candidate.score()), candidate.factors())).toList();
         return new PeonDecision(action, situationKey, this.round(selected.score()), exploration, scores);
@@ -240,6 +245,25 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     }
 
     private boolean isInsideHouse(PeonDecisionContext context) { return context.house() != null && context.house().actorInside(); }
+
+    private boolean isPredictablyLethal(PeonDecisionContext context, PeonAction action) {
+        int experienceGain = switch (action.type()) {
+            case MANGER -> this.defaults.getEatExperienceGain();
+            case SE_DEPLACER -> this.defaults.getMoveExperienceGain();
+            case ATTAQUER -> this.defaults.getAttackExperienceGain();
+            case COUPER_DU_BOIS -> this.defaults.getChopWoodExperienceGain();
+            case CONSTRUIRE_MAISON -> this.defaults.getBuildHouseExperienceGain();
+            default -> 0;
+        };
+        int levelAfter = 1 + (context.experiencePoints() + experienceGain) / this.defaults.getExperiencePerLevel();
+        int levelsGained = Math.max(0, levelAfter - context.level());
+        int health = levelsGained > 0 ? context.maxHealthPoints() + levelsGained * this.defaults.getMaxHealthGainPerLevel() : context.healthPoints();
+        if (action.type() == ActionType.MANGER && levelsGained == 0) { health = Math.min(context.maxHealthPoints(), health + this.defaults.getEatHealthGain()); }
+        if (action.type() == ActionType.SE_DEPLACER) { health -= this.defaults.getMoveHealthCost(); }
+        boolean shelteredAfterAction = action.type() == ActionType.CONSTRUIRE_MAISON || action.type() != ActionType.SE_DEPLACER && this.isInsideHouse(context);
+        int hungerLoss = shelteredAfterAction ? (int) Math.ceil(this.defaults.getHungerHealthLossPerTurn() * this.defaults.getHouseHungerPercentage() / 100.0) : this.defaults.getHungerHealthLossPerTurn();
+        return health - hungerLoss <= 0;
+    }
 
     private boolean isDangerous(PeonDecisionContext context, int enemyHealth, int enemyLevel) {
         double healthPercentage = this.healthPercentage(context);

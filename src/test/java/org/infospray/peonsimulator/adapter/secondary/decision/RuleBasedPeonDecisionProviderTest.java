@@ -102,6 +102,31 @@ class RuleBasedPeonDecisionProviderTest {
         assertThat(toward).isGreaterThan(away);
     }
 
+    @Test
+    void shouldNeverExploreAImmediatelyLethalMovement() {
+        GameDefaultsProperties properties = new GameDefaultsProperties();
+        properties.setExplorationPercentage(100);
+        properties.setCriticalHealthExplorationThreshold(0);
+        RuleBasedPeonDecisionProvider exploringProvider = new RuleBasedPeonDecisionProvider(properties);
+        PeonDecisionContext context = this.context(6, false, Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2)));
+
+        assertThat(exploringProvider.decide(context).action().type()).isNotEqualTo(ActionType.SE_DEPLACER);
+    }
+
+    @Test
+    void shouldNotExploreAnAlternativeTooFarBelowTheBestScore() {
+        GameDefaultsProperties properties = new GameDefaultsProperties();
+        properties.setExplorationPercentage(100);
+        properties.setExplorationMaximumScoreGap(20);
+        RuleBasedPeonDecisionProvider exploringProvider = new RuleBasedPeonDecisionProvider(properties);
+        ActionKnowledge knowledge = new ActionKnowledge();
+        knowledge.setExpectedReward(120);
+        String situation = "PV_ELEVES:SEUL:NOURRITURE_INCONNUE:DECOUVERT";
+        PeonDecisionContext context = this.context(80, false, Map.of(situation + "|NE_RIEN_FAIRE", knowledge), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2)));
+
+        assertThat(exploringProvider.decide(context).action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
+    }
+
     private PeonDecision decisionNearGrave(PeonPersonality personality) {
         UUID peonId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
