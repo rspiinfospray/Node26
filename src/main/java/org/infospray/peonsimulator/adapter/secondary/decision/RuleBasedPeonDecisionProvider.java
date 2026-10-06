@@ -66,7 +66,6 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         Map<String, Double> factors = new LinkedHashMap<>();
         factors.put("expérience", this.defaults.getAttackExperienceGain() * 0.5);
         factors.put("agressivité", context.personality().getAggressiveness() * 0.35);
-        factors.put("goût du risque", context.personality().getRiskAppetite() * 0.18);
         factors.put("avantage de niveau", (context.level() - enemy.level()) * 14.0);
         factors.put("avantage de PV", (context.healthPoints() - enemy.healthPoints()) * 0.25);
         factors.put("risque de dégâts", -Math.max(0, enemy.level() * 10 + 10) * context.personality().getPrudence() / 100.0);

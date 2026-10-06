@@ -543,8 +543,8 @@ function renderPeon() {
 }
 
 function renderPersonality(peon) {
-    const personality = peon.personality || { prudence:50, aggressiveness:50, curiosity:50, solidarity:50, riskAppetite:50 };
-    const traits = [['Prudence', personality.prudence], ['Agressivité', personality.aggressiveness], ['Curiosité', personality.curiosity], ['Solidarité', personality.solidarity], ['Goût du risque', personality.riskAppetite]];
+    const personality = peon.personality || { prudence:50, aggressiveness:50, curiosity:50, solidarity:50 };
+    const traits = [['Prudence', personality.prudence], ['Agressivité', personality.aggressiveness], ['Curiosité', personality.curiosity], ['Solidarité', personality.solidarity]];
     $('#personalityTraits').innerHTML = traits.map(([label, value]) => `<div class="personality-trait"><span>${label}</span><div><i style="width:${Math.max(0, Math.min(100, value))}%"></i></div><strong>${value}</strong></div>`).join('');
     const history = peon.actionHistory || [];
     const learned = Object.values(peon.learnedActions || {});

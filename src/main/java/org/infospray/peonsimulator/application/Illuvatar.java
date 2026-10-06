@@ -281,8 +281,7 @@ public class Illuvatar {
                 peon.setAttackDamage(this.defaults.getAttackDamage());
                 int prudence = 5 + random.nextInt(81);
                 int aggressiveness = random.nextInt(101 - prudence);
-                int riskAppetite = random.nextInt(Math.min(100, 110 - prudence) + 1);
-                peon.setPersonality(new PeonPersonality(prudence, aggressiveness, 20 + random.nextInt(71), 20 + random.nextInt(71), riskAppetite));
+                peon.setPersonality(new PeonPersonality(prudence, aggressiveness, 20 + random.nextInt(71), 20 + random.nextInt(71)));
                 world.getPeons().put(peon.getId(), peon);
                 spawn.addOccupant(peon.getId());
                 this.remember(world, peon, spawn, true, 0);
