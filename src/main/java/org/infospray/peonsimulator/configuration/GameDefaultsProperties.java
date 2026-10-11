@@ -51,6 +51,16 @@ public class GameDefaultsProperties {
     private int lootExperienceGain = 10;
     private int houseHungerPercentage = 50;
     private int defaultZoomPercent = 170;
+    private int woodRequiredForField = 50;
+    private int woodRequiredForGranary = 100;
+    private int fieldGrowthRounds = 8;
+    private int fieldWheatYield = 5;
+    private int granaryCapacity = 50;
+    private int wheatHealthGain = 40;
+    private int wheatExperienceGain = 15;
+    private int harvestExperienceGain = 20;
+    private int buildFieldExperienceGain = 35;
+    private int buildGranaryExperienceGain = 50;
 
     public int getWorldWidth() { return this.worldWidth; }
     public void setWorldWidth(int value) { this.worldWidth = value; }
@@ -142,4 +152,24 @@ public class GameDefaultsProperties {
     public void setLootExperienceGain(int value) { this.lootExperienceGain = value; }
     public int getHouseHungerPercentage() { return this.houseHungerPercentage; }
     public void setHouseHungerPercentage(int value) { this.houseHungerPercentage = value; }
+    public int getWoodRequiredForField() { return this.woodRequiredForField; }
+    public void setWoodRequiredForField(int value) { this.woodRequiredForField = value; }
+    public int getWoodRequiredForGranary() { return this.woodRequiredForGranary; }
+    public void setWoodRequiredForGranary(int value) { this.woodRequiredForGranary = value; }
+    public int getFieldGrowthRounds() { return this.fieldGrowthRounds; }
+    public void setFieldGrowthRounds(int value) { this.fieldGrowthRounds = value; }
+    public int getFieldWheatYield() { return this.fieldWheatYield; }
+    public void setFieldWheatYield(int value) { this.fieldWheatYield = value; }
+    public int getGranaryCapacity() { return this.granaryCapacity; }
+    public void setGranaryCapacity(int value) { this.granaryCapacity = value; }
+    public int getWheatHealthGain() { return this.wheatHealthGain; }
+    public void setWheatHealthGain(int value) { this.wheatHealthGain = value; }
+    public int getWheatExperienceGain() { return this.wheatExperienceGain; }
+    public void setWheatExperienceGain(int value) { this.wheatExperienceGain = value; }
+    public int getHarvestExperienceGain() { return this.harvestExperienceGain; }
+    public void setHarvestExperienceGain(int value) { this.harvestExperienceGain = value; }
+    public int getBuildFieldExperienceGain() { return this.buildFieldExperienceGain; }
+    public void setBuildFieldExperienceGain(int value) { this.buildFieldExperienceGain = value; }
+    public int getBuildGranaryExperienceGain() { return this.buildGranaryExperienceGain; }
+    public void setBuildGranaryExperienceGain(int value) { this.buildGranaryExperienceGain = value; }
 }

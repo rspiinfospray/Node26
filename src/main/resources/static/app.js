@@ -5,7 +5,7 @@ const pixiApp = new PIXI.Application();
 await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png?v=20261011-2', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png?v=20261011-2', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
@@ -263,6 +263,8 @@ function drawWorld() {
         if (known && rendered.woodBundleQuantity > 0) { visibleWoodBundles.push({ quantity:rendered.woodBundleQuantity, point }); }
     });
     Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
+    Object.values(world.wheatFields || {}).filter(field => !mental || mental[`${field.position.q}:${field.position.r}`]).forEach(field => drawAgriculturalBuilding(field, geo, assets.field, field.wheatQuantity));
+    Object.values(world.granaries || {}).filter(granary => !mental || mental[`${granary.position.q}:${granary.position.r}`]).forEach(granary => drawAgriculturalBuilding(granary, geo, assets.granary, granary.wheatQuantity));
     if (!mental) {
         drawSheep(Object.values(world.sheep || {}), geo, false);
         drawGraves(world, geo);
@@ -310,6 +312,18 @@ function drawHouse(house, geo) {
     const size = Math.max(10, geo.size * 1.55);
     sprite.anchor.set(.5, .58); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
     pixiApp.stage.addChild(sprite);
+}
+
+function drawAgriculturalBuilding(item, geo, texture, quantity) {
+    const point = centerOf(item.position, geo);
+    const sprite = new PIXI.Sprite(texture);
+    const size = Math.max(10, geo.size * 1.35);
+    sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+    pixiApp.stage.addChild(sprite);
+    if (quantity > 0 && geo.size > 10) {
+        const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } } });
+        label.anchor.set(.5); label.position.set(point.x + size * .3, point.y + size * .3); pixiApp.stage.addChild(label);
+    }
 }
 
 function rememberedPeonPresentations(selected) {
@@ -621,10 +635,10 @@ function renderSelection() {
 function renderHouse(house) {
     const occupantIds = [...(house.occupantPeonIds || [])];
     const occupants = occupantIds.map(id => state.world.peons[id]).filter(Boolean);
-    const host = house.hostPeonId ? state.world.peons[house.hostPeonId] : null;
-    $('#houseStatus').textContent = house.hostPeonId ? 'Occupée et protégée' : 'Vide · libre à la prise de possession';
+    const owners = [...(house.ownerPeonIds || (house.hostPeonId ? [house.hostPeonId] : []))].map(id => state.world.peons[id]).filter(Boolean);
+    $('#houseStatus').textContent = owners.length ? occupants.length ? 'Propriété privée · occupée' : 'Propriété privée · actuellement vide' : 'Sans propriétaire · libre à la prise de possession';
     $('#housePosition').textContent = `${house.position.q}, ${house.position.r}`;
-    $('#houseHost').textContent = host?.firstName || 'Aucun';
+    $('#houseHost').textContent = owners.map(owner => owner.firstName).join(', ') || 'Aucun';
     $('#houseOccupantCount').textContent = occupants.length;
     $('#houseId').textContent = house.id;
     $('#houseOccupants').innerHTML = occupants.length ? occupants.map(peon => { const team = state.world.teams[peon.teamId]; return `<button class="house-occupant" data-peon-id="${peon.id}"><span>${escapeHtml(peon.firstName)} · ${escapeHtml(team?.name || 'Sans équipe')}</span><i style="--team-color:${escapeHtml(team?.color || '#888')}"></i></button>`; }).join('') : '<p class="muted">Personne ne se trouve à l’intérieur.</p>';
@@ -713,6 +727,11 @@ function eventDescription(event) {
         case 'TREE_CUT_DOWN': return `L’arbre en ${coordinate(payload.position)} devient une plaine.`;
         case 'HOUSE_BUILT': return `Maison construite en ${coordinate(payload.position)} avec ${payload.woodSpent} bois.`;
         case 'HOUSE_CLAIMED': return `Maison vide prise en possession en ${coordinate(payload.position)}.`;
+        case 'FIELD_BUILT': return `Champ construit en ${coordinate(payload.position)} ; première récolte au tour ${payload.readyAtRound}.`;
+        case 'FIELD_RIPENED': return `Le champ en ${coordinate(payload.position)} est mûr (${payload.wheatQuantity} blés).`;
+        case 'GRANARY_BUILT': return `Grenier construit en ${coordinate(payload.position)} (capacité ${payload.capacity}).`;
+        case 'WHEAT_HARVESTED': return `${payload.quantity} blés récoltés et déposés au grenier (${payload.storedWheat} stockés).`;
+        case 'WHEAT_EATEN': return `Blé mangé : PV ${payload.healthBefore} → ${payload.healthAfter}, reste ${payload.storedWheat}.`;
         case 'PEON_ENTERED_HOUSE': return 'Le peon entre dans la maison.';
         case 'PEON_LEFT_HOUSE': return 'Le peon quitte la maison.';
         case 'HOUSE_EMPTIED': return 'La maison devient vide et peut être reprise.';
@@ -729,7 +748,7 @@ function eventDescription(event) {
     }
 }
 
-function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Baies consommées', SHEEP_EATEN:'Mouton mangé', SHEEP_MOVED:'Déplacement d’un mouton', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
+function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Baies consommées', SHEEP_EATEN:'Mouton mangé', SHEEP_MOVED:'Déplacement d’un mouton', WHEAT_EATEN:'Blé mangé', WHEAT_HARVESTED:'Récolte de blé', FIELD_BUILT:'Champ construit', FIELD_RIPENED:'Champ mûr', GRANARY_BUILT:'Grenier construit', HOUSE_BECAME_UNOWNED:'Maison sans propriétaire', HOUSE_OWNERSHIP_TRANSFERRED:'Propriété de maison transmise', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
 
 function escapeHtml(value) {
     const element = document.createElement('span');

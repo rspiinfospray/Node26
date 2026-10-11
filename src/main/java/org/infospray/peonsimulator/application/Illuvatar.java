@@ -17,6 +17,7 @@ import org.infospray.peonsimulator.domain.model.ActionType;
 import org.infospray.peonsimulator.domain.model.Cell;
 import org.infospray.peonsimulator.domain.model.HexCoordinate;
 import org.infospray.peonsimulator.domain.model.Grave;
+import org.infospray.peonsimulator.domain.model.Granary;
 import org.infospray.peonsimulator.domain.model.House;
 import org.infospray.peonsimulator.domain.model.ItemType;
 import org.infospray.peonsimulator.domain.model.RememberedHouseObservation;
@@ -33,6 +34,7 @@ import org.infospray.peonsimulator.domain.model.Team;
 import org.infospray.peonsimulator.domain.model.TerrainType;
 import org.infospray.peonsimulator.domain.model.World;
 import org.infospray.peonsimulator.domain.model.WorldStatus;
+import org.infospray.peonsimulator.domain.model.WheatField;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -186,7 +188,7 @@ public class Illuvatar {
         }
         int completedRound = world.getCurrentRound();
         world.completeTurn();
-        if (world.getCurrentRound() > completedRound) { this.moveSheep(world, actor, request, events, eventIndex, completedRound); }
+        if (world.getCurrentRound() > completedRound) { this.moveSheep(world, actor, request, events, eventIndex, completedRound); this.growFields(world, actor, request, events, eventIndex); }
         events.add(this.event(world, request, actor, "PEON_TURN_COMPLETED", eventIndex, Map.of("worldStatus", world.getStatus().name(), "nextRound", world.getCurrentRound())));
         if (world.getStatus() == WorldStatus.FINISHED) {
             events.add(this.event(world, request, actor, "WORLD_FINISHED", eventIndex, Map.of("reason", world.alivePeons().isEmpty() ? "NO_SURVIVORS" : "MAX_ROUNDS_REACHED")));
@@ -347,18 +349,26 @@ public class Illuvatar {
         List<Peon> alliedPeons = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getTeamId().equals(peon.getTeamId())).toList();
         List<HexCoordinate> neighbors = peon.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> { RememberedCell remembered = peon.getMentalMap().get(World.key(coordinate)); return remembered != null && remembered.getTerrain() != TerrainType.ROCK; }).toList();
         Peon houseHost = house == null || house.getHostPeonId() == null ? null : world.getPeons().get(house.getHostPeonId());
-        PeonDecisionContext.ObservedHouse observedHouse = house == null ? null : new PeonDecisionContext.ObservedHouse(house.getId(), house.getHostPeonId(), houseHost == null ? null : houseHost.getTeamId(), house.getPosition(), house.contains(peon.getId()), !house.isEmpty());
+        PeonDecisionContext.ObservedHouse observedHouse = house == null ? null : new PeonDecisionContext.ObservedHouse(house.getId(), house.getHostPeonId(), houseHost == null ? null : houseHost.getTeamId(), house.getPosition(), house.contains(peon.getId()), house.isOwned());
         List<PeonDecisionContext.ObservedHouse> knownHouses = peon.getMentalMap().values().stream().map(RememberedCell::getRememberedHouse).filter(java.util.Objects::nonNull).map(remembered -> new PeonDecisionContext.ObservedHouse(remembered.houseId(), null, remembered.hostTeamId(), remembered.position(), false, remembered.occupied())).toList();
         int sheepOnCurrentCell = (int) world.getSheep().values().stream().filter(sheep -> sheep.getPosition().equals(peon.getPosition())).count();
         Map<UUID, RememberedCell> newestSheepMemories = new LinkedHashMap<>();
         peon.getMentalMap().values().forEach(memory -> memory.getRememberedSheepIds().forEach(sheepId -> { RememberedCell previous = newestSheepMemories.get(sheepId); if (previous == null || memory.getLastObservedAtSequence() > previous.getLastObservedAtSequence()) { newestSheepMemories.put(sheepId, memory); } }));
         List<HexCoordinate> knownSheepPositions = newestSheepMemories.values().stream().map(RememberedCell::getCoordinate).toList();
-        boolean buildable = current.getTerrain() == TerrainType.PLAIN && house == null && sheepOnCurrentCell == 0 && current.getOccupantPeonIds().stream().allMatch(peon.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(peon.getPosition()));
+        boolean buildable = current.getTerrain() == TerrainType.PLAIN && house == null && world.wheatFieldAt(peon.getPosition()) == null && world.granaryAt(peon.getPosition()) == null && sheepOnCurrentCell == 0 && current.getOccupantPeonIds().stream().allMatch(peon.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(peon.getPosition()));
         int woodBundleQuantity = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(peon.getPosition())).mapToInt(WoodBundle::quantity).sum();
         int usefulCommunicationCount = (int) peon.getMentalMap().entrySet().stream().filter(entry -> alliedPeons.stream().anyMatch(ally -> ally.getMentalMap().get(entry.getKey()) == null || ally.getMentalMap().get(entry.getKey()).getLastObservedAtSequence() < entry.getValue().getLastObservedAtSequence())).count();
         int consecutiveCommunicationCount = 0;
         for (int historyIndex = peon.getActionHistory().size() - 1; historyIndex >= 0 && peon.getActionHistory().get(historyIndex).actionType() == ActionType.COMMUNIQUER; historyIndex--) { consecutiveCommunicationCount++; }
-        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions);
+        WheatField field = world.wheatFieldAt(peon.getPosition());
+        Granary granary = world.granaryAt(peon.getPosition());
+        PeonDecisionContext.ObservedField observedField = field == null ? null : new PeonDecisionContext.ObservedField(field.getId(), field.getTeamId(), field.getPosition(), field.getWheatQuantity());
+        PeonDecisionContext.ObservedGranary observedGranary = granary == null ? null : new PeonDecisionContext.ObservedGranary(granary.getId(), granary.getTeamId(), granary.getPosition(), granary.getWheatQuantity());
+        Set<String> knownCoordinates = peon.getMentalMap().keySet();
+        List<PeonDecisionContext.ObservedField> knownFields = world.getWheatFields().values().stream().filter(value -> knownCoordinates.contains(World.key(value.getPosition()))).map(value -> new PeonDecisionContext.ObservedField(value.getId(), value.getTeamId(), value.getPosition(), value.getWheatQuantity())).toList();
+        List<PeonDecisionContext.ObservedGranary> knownGranaries = world.getGranaries().values().stream().filter(value -> knownCoordinates.contains(World.key(value.getPosition()))).map(value -> new PeonDecisionContext.ObservedGranary(value.getId(), value.getTeamId(), value.getPosition(), value.getWheatQuantity())).toList();
+        boolean sameTeamHouseNearby = world.getHouses().values().stream().filter(candidate -> candidate.getPosition().distanceTo(peon.getPosition()) >= 1 && candidate.getPosition().distanceTo(peon.getPosition()) <= 2).flatMap(candidate -> candidate.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(peon.getTeamId()));
+        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable, buildable && sameTeamHouseNearby);
     }
 
     private void resolveAction(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -367,11 +377,15 @@ public class Illuvatar {
             case VOIR -> { this.observe(world, actor, world.getSequenceNumber()); events.add(this.event(world, request, actor, "PEON_SAW", index, Map.of("visibleCells", this.visibleCoordinates(world, actor).size()))); }
             case MANGER -> this.eat(world, actor, request, events, index);
             case MANGER_MOUTON -> this.eatSheep(world, actor, request, events, index);
+            case MANGER_BLE -> this.eatWheat(world, actor, request, events, index);
             case SE_DEPLACER -> this.move(world, actor, request, events, index);
             case ATTAQUER -> this.attack(world, actor, request, events, index);
             case COMMUNIQUER -> this.communicate(world, actor, request, events, index);
             case COUPER_DU_BOIS -> this.chopWood(world, actor, request, events, index);
             case CONSTRUIRE_MAISON -> this.buildHouse(world, actor, request, events, index);
+            case CONSTRUIRE_CHAMP -> this.buildField(world, actor, request, events, index);
+            case CONSTRUIRE_GRENIER -> this.buildGranary(world, actor, request, events, index);
+            case RECOLTER -> this.harvest(world, actor, request, events, index);
             case PILLER -> this.loot(world, actor, request, events, index);
             case NE_RIEN_FAIRE -> events.add(this.event(world, request, actor, "PEON_IDLED", index, Map.of()));
         }
@@ -411,7 +425,11 @@ public class Illuvatar {
         world.cell(destination).addOccupant(actor.getId());
         actor.setPosition(destination);
         House destinationHouse = world.houseAt(destination);
-        if (destinationHouse != null && destinationHouse.isEmpty()) {
+        if (destinationHouse != null && destinationHouse.isOwner(actor.getId())) {
+            destinationHouse.enter(actor.getId());
+            actor.setInsideHouseId(destinationHouse.getId());
+            events.add(this.event(world, request, actor, "PEON_ENTERED_HOUSE", index, Map.of("houseId", destinationHouse.getId())));
+        } else if (destinationHouse != null && !destinationHouse.isOwned()) {
             destinationHouse.claim(actor.getId());
             actor.setInsideHouseId(destinationHouse.getId());
             events.add(this.event(world, request, actor, "HOUSE_CLAIMED", index, Map.of("houseId", destinationHouse.getId(), "position", destination)));
@@ -454,22 +472,22 @@ public class Illuvatar {
         Collection<Peon> allies = world.cell(actor.getPosition()).getOccupantPeonIds().stream().map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(peon -> !peon.getId().equals(actor.getId()) && peon.isAlive() && peon.getTeamId().equals(actor.getTeamId())).toList();
         House house = world.houseAt(actor.getPosition());
         boolean houseInteraction = false;
-        if (house != null && !house.isEmpty() && !house.contains(actor.getId())) {
-            Peon host = world.getPeons().get(house.getHostPeonId());
+        if (house != null && house.isOwned() && !house.isOwner(actor.getId())) {
+            Peon host = house.getOwnerPeonIds().stream().map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).findFirst().orElse(null);
             if (host != null && host.isAlive() && host.getTeamId().equals(actor.getTeamId())) {
                 houseInteraction = true;
                 events.add(this.event(world, request, actor, "HOUSE_ENTRY_REQUESTED", index, Map.of("houseId", house.getId(), "hostPeonId", host.getId())));
                 double acceptance = host.getPersonality().getSolidarity() + host.getPersonality().getIngenuity() * 0.25 - host.getPersonality().getPrudence() * 0.4;
                 if (acceptance >= 30) {
-                    house.enter(actor.getId());
+                    house.inviteOwner(actor.getId());
                     actor.setInsideHouseId(house.getId());
                     events.add(this.event(world, request, host, "HOUSE_ENTRY_ACCEPTED", index, Map.of("houseId", house.getId(), "guestPeonId", actor.getId())));
                     events.add(this.event(world, request, actor, "PEON_ENTERED_HOUSE", index, Map.of("houseId", house.getId())));
                 } else { events.add(this.event(world, request, host, "HOUSE_ENTRY_REFUSED", index, Map.of("houseId", house.getId(), "guestPeonId", actor.getId()))); }
             }
-        } else if (house != null && actor.getId().equals(house.getHostPeonId())) {
+        } else if (house != null && house.isOwner(actor.getId())) {
             for (Peon ally : allies) {
-                if (ally.getInsideHouseId() == null) { house.enter(ally.getId()); ally.setInsideHouseId(house.getId()); houseInteraction = true; events.add(this.event(world, request, actor, "HOUSE_ENTRY_INVITED", index, Map.of("houseId", house.getId(), "guestPeonId", ally.getId()))); events.add(this.event(world, request, ally, "PEON_ENTERED_HOUSE", index, Map.of("houseId", house.getId()))); }
+                if (ally.getInsideHouseId() == null) { house.inviteOwner(ally.getId()); ally.setInsideHouseId(house.getId()); houseInteraction = true; events.add(this.event(world, request, actor, "HOUSE_ENTRY_INVITED", index, Map.of("houseId", house.getId(), "guestPeonId", ally.getId(), "coOwner", true))); events.add(this.event(world, request, ally, "PEON_ENTERED_HOUSE", index, Map.of("houseId", house.getId()))); }
             }
         }
         if (allies.isEmpty() && !houseInteraction) { this.reject(world, actor, request, events, index, "NO_ALLY_IN_RANGE"); return; }
@@ -499,7 +517,7 @@ public class Illuvatar {
         boolean occupiedByOther = cell.getOccupantPeonIds().stream().anyMatch(id -> !id.equals(actor.getId()));
         boolean gravePresent = world.getGraves().values().stream().anyMatch(grave -> grave.position().equals(actor.getPosition()));
         boolean sheepPresent = world.getSheep().values().stream().anyMatch(sheep -> sheep.getPosition().equals(actor.getPosition()));
-        if (cell.getTerrain() != TerrainType.PLAIN || world.houseAt(actor.getPosition()) != null || occupiedByOther || gravePresent || sheepPresent) { this.reject(world, actor, request, events, index, "INVALID_BUILD_SITE"); return; }
+        if (cell.getTerrain() != TerrainType.PLAIN || world.houseAt(actor.getPosition()) != null || world.wheatFieldAt(actor.getPosition()) != null || world.granaryAt(actor.getPosition()) != null || occupiedByOther || gravePresent || sheepPresent) { this.reject(world, actor, request, events, index, "INVALID_BUILD_SITE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForHouse())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         House house = new House(UUID.randomUUID(), actor.getPosition(), actor.getId());
         world.getHouses().put(house.getId(), house);
@@ -520,16 +538,57 @@ public class Illuvatar {
         this.remember(world, actor, world.cell(actor.getPosition()), true, world.getSequenceNumber());
     }
 
+    private void buildField(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        if (!this.isFreeConstructionSite(world, actor)) { this.reject(world, actor, request, events, index, "INVALID_FIELD_SITE"); return; }
+        if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForField())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
+        WheatField field = new WheatField(UUID.randomUUID(), actor.getPosition(), actor.getTeamId(), world.getCurrentRound() + this.defaults.getFieldGrowthRounds());
+        world.getWheatFields().put(field.getId(), field);
+        events.add(this.event(world, request, actor, "FIELD_BUILT", index, Map.of("fieldId", field.getId(), "position", field.getPosition(), "readyAtRound", field.getReadyAtRound())));
+        this.gainExperience(world, actor, request, events, index, this.defaults.getBuildFieldExperienceGain());
+    }
+
+    private void buildGranary(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        if (!this.isFreeConstructionSite(world, actor)) { this.reject(world, actor, request, events, index, "INVALID_GRANARY_SITE"); return; }
+        boolean nearbyHouse = world.getHouses().values().stream().filter(house -> house.getPosition().distanceTo(actor.getPosition()) >= 1 && house.getPosition().distanceTo(actor.getPosition()) <= 2).flatMap(house -> house.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(actor.getTeamId()));
+        if (!nearbyHouse) { this.reject(world, actor, request, events, index, "NO_ALLIED_HOUSE_NEARBY"); return; }
+        if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForGranary())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
+        Granary granary = new Granary(UUID.randomUUID(), actor.getPosition(), actor.getTeamId());
+        world.getGranaries().put(granary.getId(), granary);
+        events.add(this.event(world, request, actor, "GRANARY_BUILT", index, Map.of("granaryId", granary.getId(), "position", granary.getPosition(), "capacity", this.defaults.getGranaryCapacity())));
+        this.gainExperience(world, actor, request, events, index, this.defaults.getBuildGranaryExperienceGain());
+    }
+
+    private void harvest(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        WheatField field = world.wheatFieldAt(actor.getPosition());
+        if (field == null || !field.getTeamId().equals(actor.getTeamId()) || !field.isReady()) { this.reject(world, actor, request, events, index, "NO_RIPE_ALLIED_FIELD"); return; }
+        Granary granary = world.getGranaries().values().stream().filter(candidate -> candidate.getTeamId().equals(actor.getTeamId())).filter(candidate -> candidate.getWheatQuantity() < this.defaults.getGranaryCapacity()).min(Comparator.comparingInt(candidate -> candidate.getPosition().distanceTo(actor.getPosition()))).orElse(null);
+        if (granary == null) { this.reject(world, actor, request, events, index, "NO_AVAILABLE_ALLIED_GRANARY"); return; }
+        int harvested = field.harvest(this.defaults.getGranaryCapacity() - granary.getWheatQuantity(), world.getCurrentRound(), this.defaults.getFieldGrowthRounds());
+        granary.store(harvested, this.defaults.getGranaryCapacity());
+        events.add(this.event(world, request, actor, "WHEAT_HARVESTED", index, Map.of("fieldId", field.getId(), "granaryId", granary.getId(), "quantity", harvested, "storedWheat", granary.getWheatQuantity())));
+        this.gainExperience(world, actor, request, events, index, this.defaults.getHarvestExperienceGain());
+    }
+
+    private void eatWheat(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        Granary granary = world.granaryAt(actor.getPosition());
+        if (granary == null || !granary.getTeamId().equals(actor.getTeamId()) || !granary.consume()) { this.reject(world, actor, request, events, index, "NO_ALLIED_WHEAT"); return; }
+        int healthBefore = actor.getHealthPoints();
+        actor.heal(this.defaults.getWheatHealthGain());
+        events.add(this.event(world, request, actor, "WHEAT_EATEN", index, Map.of("granaryId", granary.getId(), "healthBefore", healthBefore, "healthAfter", actor.getHealthPoints(), "storedWheat", granary.getWheatQuantity())));
+        this.gainExperience(world, actor, request, events, index, this.defaults.getWheatExperienceGain());
+    }
+
+    private boolean isFreeConstructionSite(World world, Peon actor) {
+        Cell cell = world.cell(actor.getPosition());
+        return cell.getTerrain() == TerrainType.PLAIN && world.houseAt(actor.getPosition()) == null && world.wheatFieldAt(actor.getPosition()) == null && world.granaryAt(actor.getPosition()) == null && cell.getOccupantPeonIds().stream().allMatch(actor.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(actor.getPosition())) && world.getSheep().values().stream().noneMatch(sheep -> sheep.getPosition().equals(actor.getPosition()));
+    }
+
     private void leaveHouse(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (actor.getInsideHouseId() == null) { return; }
         House house = world.getHouses().get(actor.getInsideHouseId());
         actor.setInsideHouseId(null);
         if (house == null) { return; }
-        if (actor.getId().equals(house.getHostPeonId())) {
-            for (UUID occupantId : List.copyOf(house.getOccupantPeonIds())) { Peon occupant = world.getPeons().get(occupantId); if (occupant != null) { occupant.setInsideHouseId(null); } }
-            house.empty();
-            events.add(this.event(world, request, actor, "HOUSE_EMPTIED", index, Map.of("houseId", house.getId())));
-        } else { house.leave(actor.getId()); }
+        house.leave(actor.getId());
         events.add(this.event(world, request, actor, "PEON_LEFT_HOUSE", index, Map.of("houseId", house.getId())));
     }
 
@@ -572,8 +631,13 @@ public class Illuvatar {
     private void removeDeadPeon(World world, Peon peon, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (peon.getInsideHouseId() != null) {
             House house = world.getHouses().get(peon.getInsideHouseId());
-            if (house != null && peon.getId().equals(house.getHostPeonId())) { for (UUID occupantId : List.copyOf(house.getOccupantPeonIds())) { Peon occupant = world.getPeons().get(occupantId); if (occupant != null) { occupant.setInsideHouseId(null); } } house.empty(); } else if (house != null) { house.leave(peon.getId()); }
+            if (house != null) { house.leave(peon.getId()); }
             peon.setInsideHouseId(null);
+        }
+        for (House house : world.getHouses().values()) {
+            if (!house.isOwner(peon.getId())) { continue; }
+            house.removeOwner(peon.getId());
+            events.add(this.event(world, request, peon, house.isOwned() ? "HOUSE_OWNERSHIP_TRANSFERRED" : "HOUSE_BECAME_UNOWNED", index, Map.of("houseId", house.getId(), "remainingOwnerCount", house.getOwnerPeonIds().size())));
         }
         world.cell(peon.getPosition()).removeOccupant(peon.getId());
         world.getGraves().putIfAbsent(peon.getId(), new Grave(peon.getId(), peon.getPosition(), world.getCurrentRound(), world.getSequenceNumber()));
@@ -603,7 +667,7 @@ public class Illuvatar {
         RememberedCell memory = observer.getMentalMap().get(World.key(cell.getCoordinate()));
         if (observedHouse == null) { memory.setRememberedHouse(null); } else {
             Peon host = observedHouse.getHostPeonId() == null ? null : world.getPeons().get(observedHouse.getHostPeonId());
-            memory.setRememberedHouse(new RememberedHouseObservation(observedHouse.getId(), observedHouse.getPosition(), host == null ? null : host.getTeamId(), !observedHouse.isEmpty(), sequence));
+            memory.setRememberedHouse(new RememberedHouseObservation(observedHouse.getId(), observedHouse.getPosition(), host == null ? null : host.getTeamId(), observedHouse.isOwned(), sequence));
         }
         int rememberedWood = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(cell.getCoordinate())).mapToInt(WoodBundle::quantity).sum();
         memory.setRememberedWoodBundleQuantity(rememberedWood);
@@ -621,6 +685,14 @@ public class Illuvatar {
             HexCoordinate destination = destinations.get(random.nextInt(destinations.size()));
             sheep.setPosition(destination);
             events.add(this.event(world, request, actor, "SHEEP_MOVED", index, Map.of("sheepId", sheep.getId(), "from", origin, "to", destination, "round", completedRound)));
+        }
+    }
+
+    private void growFields(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        for (WheatField field : world.getWheatFields().values()) {
+            boolean wasReady = field.isReady();
+            field.ripen(world.getCurrentRound(), this.defaults.getFieldWheatYield());
+            if (!wasReady && field.isReady()) { events.add(this.event(world, request, actor, "FIELD_RIPENED", index, Map.of("fieldId", field.getId(), "position", field.getPosition(), "wheatQuantity", field.getWheatQuantity()))); }
         }
     }
 

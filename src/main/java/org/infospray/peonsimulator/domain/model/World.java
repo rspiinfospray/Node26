@@ -33,6 +33,8 @@ public class World {
     private Map<UUID, House> houses = new LinkedHashMap<>();
     private Map<UUID, WoodBundle> woodBundles = new LinkedHashMap<>();
     private Map<UUID, Sheep> sheep = new LinkedHashMap<>();
+    private Map<UUID, WheatField> wheatFields = new LinkedHashMap<>();
+    private Map<UUID, Granary> granaries = new LinkedHashMap<>();
 
     public World() {
     }
@@ -62,6 +64,8 @@ public class World {
     public Map<UUID, House> getHouses() { return this.houses; }
     public Map<UUID, WoodBundle> getWoodBundles() { return this.woodBundles; }
     public Map<UUID, Sheep> getSheep() { return this.sheep; }
+    public Map<UUID, WheatField> getWheatFields() { return this.wheatFields; }
+    public Map<UUID, Granary> getGranaries() { return this.granaries; }
     public void setId(UUID id) { this.id = id; }
     public void setName(String name) { this.name = name; }
     public void setStatus(WorldStatus status) { this.status = status; }
@@ -98,7 +102,11 @@ public class World {
     public void setHouses(Map<UUID, House> value) { this.houses = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public void setWoodBundles(Map<UUID, WoodBundle> value) { this.woodBundles = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public void setSheep(Map<UUID, Sheep> value) { this.sheep = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setWheatFields(Map<UUID, WheatField> value) { this.wheatFields = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setGranaries(Map<UUID, Granary> value) { this.granaries = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public House houseAt(HexCoordinate coordinate) { return this.houses.values().stream().filter(house -> house.getPosition().equals(coordinate)).findFirst().orElse(null); }
+    public WheatField wheatFieldAt(HexCoordinate coordinate) { return this.wheatFields.values().stream().filter(field -> field.getPosition().equals(coordinate)).findFirst().orElse(null); }
+    public Granary granaryAt(HexCoordinate coordinate) { return this.granaries.values().stream().filter(granary -> granary.getPosition().equals(coordinate)).findFirst().orElse(null); }
 
     public Cell cell(HexCoordinate coordinate) { return this.cells.get(key(coordinate)); }
     public boolean contains(HexCoordinate coordinate) { return this.cells.containsKey(key(coordinate)); }

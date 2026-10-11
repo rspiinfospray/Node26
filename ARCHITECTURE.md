@@ -610,7 +610,14 @@ En production, le scheduler doit être séparé logiquement des instances d'API,
 6. Journal, snapshots, curseur temporel et lecture automatique.
 7. Moteur de décision, équilibrage des règles, métriques et durcissement de la concurrence.
 
-## 15. Décisions à fixer avant l'implémentation métier détaillée
+## 15. Agriculture et propriété des maisons
+
+- Une maison conserve ses propriétaires lorsqu'elle est vide. Un allié invité devient copropriétaire ; chaque propriété individuelle prend fin à la mort du peon. La maison ne redevient réclamable que lorsque tous ses propriétaires sont morts.
+- Un champ coûte 50 bois, pousse en 8 tours puis produit 5 unités de blé renouvelables.
+- Un grenier coûte 100 bois, appartient à une équipe et doit être construit sur une plaine libre à une distance hexagonale de 1 ou 2 d'une maison possédée par un peon vivant de la même équipe. Sa capacité est de 50 unités.
+- La récolte transfère le blé vers le grenier allié disponible le plus proche. Un peon doit se trouver sur un grenier allié pour consommer une unité de blé, gagner 40 PV et 15 XP.
+
+## 16. Décisions à fixer avant l'implémentation métier détaillée
 
 - éventuelle réapparition de nourriture pendant la simulation ;
 - coût/gain de PV exact des actions, en complément des `5 PV` de faim appliqués à chaque tour ;

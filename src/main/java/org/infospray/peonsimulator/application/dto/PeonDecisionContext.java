@@ -10,13 +10,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public record PeonDecisionContext(UUID peonId, UUID teamId, int healthPoints, int maxHealthPoints, int experiencePoints, int level, HexCoordinate position, boolean concealedByTree, long sequenceNumber, long decisionSeed, PeonPersonality personality, Map<String, ActionKnowledge> learnedActions, Map<String, RememberedCell> mentalMap, List<ObservedPeon> peonsOnCurrentCell, int foodOnCurrentCell, List<HexCoordinate> traversableNeighbors, int currentRound, int lastObservationRound, TerrainType currentTerrain, int treeHealthPoints, int woodQuantity, int woodBundleQuantity, boolean buildable, ObservedHouse house, List<ObservedHouse> knownHouses, int usefulCommunicationCount, int consecutiveCommunicationCount, int sheepOnCurrentCell, List<HexCoordinate> knownSheepPositions) {
+public record PeonDecisionContext(UUID peonId, UUID teamId, int healthPoints, int maxHealthPoints, int experiencePoints, int level, HexCoordinate position, boolean concealedByTree, long sequenceNumber, long decisionSeed, PeonPersonality personality, Map<String, ActionKnowledge> learnedActions, Map<String, RememberedCell> mentalMap, List<ObservedPeon> peonsOnCurrentCell, int foodOnCurrentCell, List<HexCoordinate> traversableNeighbors, int currentRound, int lastObservationRound, TerrainType currentTerrain, int treeHealthPoints, int woodQuantity, int woodBundleQuantity, boolean buildable, ObservedHouse house, List<ObservedHouse> knownHouses, int usefulCommunicationCount, int consecutiveCommunicationCount, int sheepOnCurrentCell, List<HexCoordinate> knownSheepPositions, ObservedField field, ObservedGranary granary, List<ObservedField> knownFields, List<ObservedGranary> knownGranaries, boolean fieldBuildable, boolean granaryBuildable) {
     public PeonDecisionContext(
             UUID peonId, UUID teamId, int healthPoints, int maxHealthPoints, int experiencePoints, int level,
             HexCoordinate position, boolean concealedByTree, long sequenceNumber, long decisionSeed, PeonPersonality personality,
             Map<String, ActionKnowledge> learnedActions, Map<String, RememberedCell> mentalMap, List<ObservedPeon> peonsOnCurrentCell,
             int foodOnCurrentCell, List<HexCoordinate> traversableNeighbors, int currentRound, int lastObservationRound) {
-        this(peonId, teamId, healthPoints, maxHealthPoints, experiencePoints, level, position, concealedByTree, sequenceNumber, decisionSeed, personality, learnedActions, mentalMap, peonsOnCurrentCell, foodOnCurrentCell, traversableNeighbors, currentRound, lastObservationRound, concealedByTree ? TerrainType.TREE : TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 0, List.of());
+        this(peonId, teamId, healthPoints, maxHealthPoints, experiencePoints, level, position, concealedByTree, sequenceNumber, decisionSeed, personality, learnedActions, mentalMap, peonsOnCurrentCell, foodOnCurrentCell, traversableNeighbors, currentRound, lastObservationRound, concealedByTree ? TerrainType.TREE : TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 0, List.of(), null, null, List.of(), List.of(), false, false);
     }
 
     public PeonDecisionContext(
@@ -26,12 +26,29 @@ public record PeonDecisionContext(UUID peonId, UUID teamId, int healthPoints, in
             int foodOnCurrentCell, List<HexCoordinate> traversableNeighbors, int currentRound, int lastObservationRound,
             TerrainType currentTerrain, int treeHealthPoints, int woodQuantity, int woodBundleQuantity, boolean buildable,
             ObservedHouse house, List<ObservedHouse> knownHouses, int usefulCommunicationCount, int consecutiveCommunicationCount) {
-        this(peonId, teamId, healthPoints, maxHealthPoints, experiencePoints, level, position, concealedByTree, sequenceNumber, decisionSeed, personality, learnedActions, mentalMap, peonsOnCurrentCell, foodOnCurrentCell, traversableNeighbors, currentRound, lastObservationRound, currentTerrain, treeHealthPoints, woodQuantity, woodBundleQuantity, buildable, house, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, 0, List.of());
+        this(peonId, teamId, healthPoints, maxHealthPoints, experiencePoints, level, position, concealedByTree, sequenceNumber, decisionSeed, personality, learnedActions, mentalMap, peonsOnCurrentCell, foodOnCurrentCell, traversableNeighbors, currentRound, lastObservationRound, currentTerrain, treeHealthPoints, woodQuantity, woodBundleQuantity, buildable, house, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, 0, List.of(), null, null, List.of(), List.of(), false, false);
+    }
+
+    public PeonDecisionContext(
+            UUID peonId, UUID teamId, int healthPoints, int maxHealthPoints, int experiencePoints, int level,
+            HexCoordinate position, boolean concealedByTree, long sequenceNumber, long decisionSeed, PeonPersonality personality,
+            Map<String, ActionKnowledge> learnedActions, Map<String, RememberedCell> mentalMap, List<ObservedPeon> peonsOnCurrentCell,
+            int foodOnCurrentCell, List<HexCoordinate> traversableNeighbors, int currentRound, int lastObservationRound,
+            TerrainType currentTerrain, int treeHealthPoints, int woodQuantity, int woodBundleQuantity, boolean buildable,
+            ObservedHouse house, List<ObservedHouse> knownHouses, int usefulCommunicationCount, int consecutiveCommunicationCount,
+            int sheepOnCurrentCell, List<HexCoordinate> knownSheepPositions) {
+        this(peonId, teamId, healthPoints, maxHealthPoints, experiencePoints, level, position, concealedByTree, sequenceNumber, decisionSeed, personality, learnedActions, mentalMap, peonsOnCurrentCell, foodOnCurrentCell, traversableNeighbors, currentRound, lastObservationRound, currentTerrain, treeHealthPoints, woodQuantity, woodBundleQuantity, buildable, house, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, null, null, List.of(), List.of(), false, false);
     }
 
     public record ObservedPeon(UUID id, UUID teamId, int healthPoints, int level) {
     }
 
     public record ObservedHouse(UUID id, UUID hostPeonId, UUID hostTeamId, HexCoordinate position, boolean actorInside, boolean occupied) {
+    }
+
+    public record ObservedField(UUID id, UUID teamId, HexCoordinate position, int wheatQuantity) {
+    }
+
+    public record ObservedGranary(UUID id, UUID teamId, HexCoordinate position, int wheatQuantity) {
     }
 }

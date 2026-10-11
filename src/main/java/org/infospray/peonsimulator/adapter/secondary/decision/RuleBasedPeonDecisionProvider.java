@@ -36,8 +36,12 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         List<WeightedAction> candidates = new ArrayList<>();
         if (context.foodOnCurrentCell() > 0) { candidates.add(this.scoreEat(context, situationKey)); }
         if (context.sheepOnCurrentCell() > 0) { candidates.add(this.scoreEatSheep(context, situationKey)); }
+        if (context.granary() != null && context.teamId().equals(context.granary().teamId()) && context.granary().wheatQuantity() > 0) { candidates.add(this.scoreEatWheat(context, situationKey)); }
+        if (context.field() != null && context.teamId().equals(context.field().teamId()) && context.field().wheatQuantity() > 0 && context.knownGranaries().stream().anyMatch(granary -> context.teamId().equals(granary.teamId()))) { candidates.add(this.scoreHarvest(context, situationKey)); }
         if (context.currentTerrain() == TerrainType.TREE && context.treeHealthPoints() > 0) { candidates.add(this.scoreChopWood(context, situationKey)); }
         if (context.buildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForHouse()) { candidates.add(this.scoreBuildHouse(context, situationKey)); }
+        if (context.fieldBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForField()) { candidates.add(this.scoreBuildField(context, situationKey)); }
+        if (context.granaryBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForGranary()) { candidates.add(this.scoreBuildGranary(context, situationKey)); }
         if (context.woodBundleQuantity() > 0) { candidates.add(this.scoreLoot(context, situationKey)); }
         context.peonsOnCurrentCell().stream().filter(peon -> !peon.teamId().equals(context.teamId())).forEach(enemy -> candidates.add(this.scoreAttack(context, enemy, situationKey)));
         if (context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId())) || context.house() != null && context.house().hostTeamId() != null && context.house().hostTeamId().equals(context.teamId())) { candidates.add(this.scoreCommunicate(context, situationKey)); }
@@ -46,9 +50,11 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         HexCoordinate knownSheep = this.closestKnownSheep(context);
         HexCoordinate knownTree = this.closestKnownTree(context);
         HexCoordinate knownLoot = this.closestKnownLoot(context);
+        HexCoordinate knownField = this.closestUsefulField(context);
+        HexCoordinate knownGranary = this.closestUsefulGranary(context);
         RememberedGraveObservation knownGrave = this.closestKnownGrave(context);
         PeonDecisionContext.ObservedHouse safeHouse = this.closestKnownSafeHouse(context);
-        context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, knownFood, knownSheep, knownTree, knownLoot, knownGrave, safeHouse, situationKey)));
+        context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, knownFood, knownSheep, knownTree, knownLoot, knownField, knownGranary, knownGrave, safeHouse, situationKey)));
         candidates.add(this.scoreSee(context, knownEnemy, knownGrave, situationKey));
         candidates.add(this.scoreIdle(context, knownEnemy, knownGrave, situationKey));
         candidates.sort(Comparator.comparingDouble(WeightedAction::score).reversed());
@@ -87,6 +93,39 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         factors.put("proie enfin rattrapée", 8.0);
         this.addLearning(context, situationKey, ActionType.MANGER_MOUTON, factors);
         return this.weighted(new PeonAction(ActionType.MANGER_MOUTON, null, null, PeonPurpose.SURVIVRE, ""), factors);
+    }
+
+    private WeightedAction scoreEatWheat(PeonDecisionContext context, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("réserve renouvelable", 35.0);
+        factors.put("survie", (100.0 - this.healthPercentage(context)) * 0.9);
+        factors.put("soin", this.defaults.getWheatHealthGain() * 0.6);
+        this.addLearning(context, situationKey, ActionType.MANGER_BLE, factors);
+        return this.weighted(new PeonAction(ActionType.MANGER_BLE, null, null, PeonPurpose.SURVIVRE, ""), factors);
+    }
+
+    private WeightedAction scoreHarvest(PeonDecisionContext context, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("nourriture durable pour l'équipe", 75.0 + context.personality().getSolidarity() * 0.3);
+        factors.put("expérience", this.defaults.getHarvestExperienceGain() * 0.4);
+        this.addLearning(context, situationKey, ActionType.RECOLTER, factors);
+        return this.weighted(new PeonAction(ActionType.RECOLTER, null, null, PeonPurpose.AIDER_LES_ALLIES, ""), factors);
+    }
+
+    private WeightedAction scoreBuildField(PeonDecisionContext context, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("production renouvelable", 38.0);
+        factors.put("ingéniosité", context.personality().getIngenuity() * 0.35);
+        this.addLearning(context, situationKey, ActionType.CONSTRUIRE_CHAMP, factors);
+        return this.weighted(new PeonAction(ActionType.CONSTRUIRE_CHAMP, null, null, PeonPurpose.SURVIVRE, ""), factors);
+    }
+
+    private WeightedAction scoreBuildGranary(PeonDecisionContext context, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("stockage collectif", 50.0 + context.personality().getSolidarity() * 0.25);
+        factors.put("champs connus", context.knownFields().size() * 10.0);
+        this.addLearning(context, situationKey, ActionType.CONSTRUIRE_GRENIER, factors);
+        return this.weighted(new PeonAction(ActionType.CONSTRUIRE_GRENIER, null, null, PeonPurpose.AIDER_LES_ALLIES, ""), factors);
     }
 
     private WeightedAction scoreAttack(PeonDecisionContext context, PeonDecisionContext.ObservedPeon enemy, String situationKey) {
@@ -147,7 +186,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         return this.weighted(new PeonAction(ActionType.PILLER, null, null, PeonPurpose.GAGNER_DES_NIVEAUX, ""), factors);
     }
 
-    private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, HexCoordinate food, HexCoordinate sheep, HexCoordinate tree, HexCoordinate loot, RememberedGraveObservation grave, PeonDecisionContext.ObservedHouse safeHouse, String situationKey) {
+    private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, HexCoordinate food, HexCoordinate sheep, HexCoordinate tree, HexCoordinate loot, HexCoordinate field, HexCoordinate granary, RememberedGraveObservation grave, PeonDecisionContext.ObservedHouse safeHouse, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
         RememberedCell destinationMemory = context.mentalMap().get(destination.q() + ":" + destination.r());
         factors.put("expérience", this.defaults.getMoveExperienceGain() * 0.35);
@@ -174,6 +213,8 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             int progress = context.position().distanceTo(loot) - destination.distanceTo(loot);
             factors.put("recherche de butin", progress * (this.defaults.getLootExperienceGain() * 0.8 + context.personality().getIngenuity() * 0.22));
         }
+        if (field != null) { factors.put("récolte du blé", (context.position().distanceTo(field) - destination.distanceTo(field)) * 60.0); }
+        if (granary != null) { factors.put("réserve de blé", (context.position().distanceTo(granary) - destination.distanceTo(granary)) * (100.0 - this.healthPercentage(context)) * 0.8); }
         if (enemy != null) {
             int distanceChange = destination.distanceTo(enemy.position()) - context.position().distanceTo(enemy.position());
             boolean dangerous = this.isDangerous(context, enemy.healthPoints(), enemy.level());
@@ -290,6 +331,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         return context.mentalMap().values().stream().filter(cell -> cell.getRememberedWoodBundleQuantity() > 0).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(context.position()))).map(RememberedCell::getCoordinate).orElse(null);
     }
 
+    private HexCoordinate closestUsefulField(PeonDecisionContext context) { return context.knownFields().stream().filter(field -> context.teamId().equals(field.teamId()) && field.wheatQuantity() > 0).min(Comparator.comparingInt(field -> field.position().distanceTo(context.position()))).map(PeonDecisionContext.ObservedField::position).orElse(null); }
+
+    private HexCoordinate closestUsefulGranary(PeonDecisionContext context) { return context.knownGranaries().stream().filter(granary -> context.teamId().equals(granary.teamId()) && granary.wheatQuantity() > 0).min(Comparator.comparingInt(granary -> granary.position().distanceTo(context.position()))).map(PeonDecisionContext.ObservedGranary::position).orElse(null); }
+
     private RememberedPeonObservation closestKnownEnemy(PeonDecisionContext context) {
         Map<UUID, RememberedPeonObservation> newest = new LinkedHashMap<>();
         context.mentalMap().values().stream().flatMap(cell -> cell.getRememberedPeons().stream()).filter(observation -> observation.relation() == PeonRelation.ENEMY).forEach(observation -> {
@@ -318,10 +363,14 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         int experienceGain = switch (action.type()) {
             case MANGER -> this.defaults.getEatExperienceGain();
             case MANGER_MOUTON -> this.defaults.getSheepExperienceGain();
+            case MANGER_BLE -> this.defaults.getWheatExperienceGain();
             case SE_DEPLACER -> this.defaults.getMoveExperienceGain();
             case ATTAQUER -> this.defaults.getAttackExperienceGain();
             case COUPER_DU_BOIS -> this.defaults.getChopWoodExperienceGain();
             case CONSTRUIRE_MAISON -> this.defaults.getBuildHouseExperienceGain();
+            case CONSTRUIRE_CHAMP -> this.defaults.getBuildFieldExperienceGain();
+            case CONSTRUIRE_GRENIER -> this.defaults.getBuildGranaryExperienceGain();
+            case RECOLTER -> this.defaults.getHarvestExperienceGain();
             case PILLER -> this.defaults.getLootExperienceGain();
             default -> 0;
         };
@@ -330,6 +379,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         int health = levelsGained > 0 ? context.maxHealthPoints() + levelsGained * this.defaults.getMaxHealthGainPerLevel() : context.healthPoints();
         if (action.type() == ActionType.MANGER && levelsGained == 0) { health = Math.min(context.maxHealthPoints(), health + this.defaults.getEatHealthGain()); }
         if (action.type() == ActionType.MANGER_MOUTON && levelsGained == 0) { health = Math.min(context.maxHealthPoints(), health + this.defaults.getSheepHealthGain()); }
+        if (action.type() == ActionType.MANGER_BLE && levelsGained == 0) { health = Math.min(context.maxHealthPoints(), health + this.defaults.getWheatHealthGain()); }
         if (action.type() == ActionType.SE_DEPLACER) { health -= this.defaults.getMoveHealthCost(); }
         boolean shelteredAfterAction = action.type() == ActionType.CONSTRUIRE_MAISON || action.type() != ActionType.SE_DEPLACER && this.isInsideHouse(context);
         int hungerLoss = shelteredAfterAction ? (int) Math.ceil(this.defaults.getHungerHealthLossPerTurn() * this.defaults.getHouseHungerPercentage() / 100.0) : this.defaults.getHungerHealthLossPerTurn();
