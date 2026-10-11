@@ -13,6 +13,7 @@ public class GameDefaultsProperties {
     private double foodCellPercentage = 15;
     private int minFoodPerCell = 1;
     private int maxFoodPerCell = 3;
+    private int sheepCount = 10;
     private int maxRounds = 100;
     private int initialHealthPoints = 100;
     private int maxHealthPoints = 100;
@@ -21,6 +22,9 @@ public class GameDefaultsProperties {
     private int hungerHealthLossPerTurn = 5;
     private int eatHealthGain = 20;
     private int eatExperienceGain = 20;
+    private int sheepHealthGain = 60;
+    private int sheepExperienceGain = 30;
+    private int sheepMovementPercentage = 50;
     private int moveExperienceGain = 5;
     private int moveHealthCost = 5;
     private int attackExperienceGain = 40;
@@ -62,6 +66,8 @@ public class GameDefaultsProperties {
     public void setMinFoodPerCell(int value) { this.minFoodPerCell = value; }
     public int getMaxFoodPerCell() { return this.maxFoodPerCell; }
     public void setMaxFoodPerCell(int value) { this.maxFoodPerCell = value; }
+    public int getSheepCount() { return this.sheepCount; }
+    public void setSheepCount(int value) { this.sheepCount = value; }
     public int getMaxRounds() { return this.maxRounds; }
     public void setMaxRounds(int value) { this.maxRounds = value; }
     public int getInitialHealthPoints() { return this.initialHealthPoints; }
@@ -78,6 +84,12 @@ public class GameDefaultsProperties {
     public void setEatHealthGain(int value) { this.eatHealthGain = value; }
     public int getEatExperienceGain() { return this.eatExperienceGain; }
     public void setEatExperienceGain(int value) { this.eatExperienceGain = value; }
+    public int getSheepHealthGain() { return this.sheepHealthGain; }
+    public void setSheepHealthGain(int value) { this.sheepHealthGain = value; }
+    public int getSheepExperienceGain() { return this.sheepExperienceGain; }
+    public void setSheepExperienceGain(int value) { this.sheepExperienceGain = value; }
+    public int getSheepMovementPercentage() { return this.sheepMovementPercentage; }
+    public void setSheepMovementPercentage(int value) { this.sheepMovementPercentage = value; }
     public int getMoveExperienceGain() { return this.moveExperienceGain; }
     public void setMoveExperienceGain(int value) { this.moveExperienceGain = value; }
     public int getMoveHealthCost() { return this.moveHealthCost; }

@@ -6,6 +6,7 @@ Le système simule un monde hexagonal au tour par tour dans lequel une ou plusie
 
 - `VOIR`
 - `MANGER`
+- `MANGER_MOUTON`
 - `SE_DEPLACER`
 - `ATTAQUER`
 - `COMMUNIQUER`
@@ -262,7 +263,9 @@ Cell
 
 Une roche est infranchissable et ne peut contenir ni peon ni nourriture. Une plaine peut contenir plusieurs peons et de la nourriture. Une case d'arbres est franchissable et peut contenir plusieurs peons ainsi que de la nourriture dès la création du monde. Elle masque systématiquement ses occupants aux observateurs situés sur une autre case. Un peon présent dans les arbres sait qu'il bénéficie de ce couvert et peut décider de s'y maintenir face au souvenir récent d'un ennemi dangereux. Deux peons placés sur la même case d'arbres se voient toujours.
 
-La nourriture est disposée aléatoirement sur les plaines lors de la création du monde, après la génération et la validation du terrain. Dans la première version, aucune nouvelle nourriture n'apparaît pendant la simulation. Une action `MANGER` réussie consomme exactement une unité. La quantité de la case diminue de `1` et, lorsqu'elle atteint `0`, la nourriture disparaît de la case. L'opération produit un événement `FoodConsumed` indiquant la case et les quantités avant et après consommation, en plus de `PeonAte`.
+La nourriture végétale est disposée aléatoirement sur les cases accessibles lors de la création du monde, après la génération et la validation du terrain. Aucune nouvelle nourriture n'apparaît pendant la simulation. Une action `MANGER` réussie consomme exactement une unité de baies. La quantité de la case diminue de `1` et, lorsqu'elle atteint `0`, la nourriture disparaît de la case. L'opération produit un événement `FoodConsumed` indiquant la case et les quantités avant et après consommation, en plus de `PeonAte`.
+
+Les moutons constituent une nourriture mobile distincte. Leur nombre initial, `sheepCount` (`10` par défaut), est configurable à la création du monde. À la fin de chaque round complet, chaque mouton a `50 %` de chances de tenter un déplacement vers une case voisine ; il peut rester immobile et ne peut entrer ni sur une roche ni sur une case portant une maison. Un péon ne peut manger qu'un mouton présent sur sa propre case. L'action `MANGER_MOUTON` supprime ce mouton, rend `60 PV` sans dépasser le maximum et donne `30 XP`. Les moutons observés sont mémorisés avec leur position et peuvent donc être poursuivis, mais ce souvenir devient potentiellement obsolète lorsqu'ils se déplacent.
 
 ## 5. Règles d'action initiales
 
@@ -272,6 +275,7 @@ Les valeurs exactes restent configurables par monde.
 |---|---|---|
 | `VOIR` | peon vivant | révèle le terrain et le contenu des cases dans le rayon correspondant au niveau, sous réserve de la ligne de vue bloquée par les roches et les arbres ; les occupants d'une case d'arbres ne sont visibles que depuis cette même case |
 | `MANGER` | au moins une unité de nourriture disponible sur la case du peon | consomme exactement une unité, la fait disparaître si la quantité atteint zéro, rend des PV sans dépasser un maximum configurable et donne `20 XP` |
+| `MANGER_MOUTON` | au moins un mouton présent sur la case du peon | consomme un mouton, rend `60 PV` sans dépasser le maximum et donne `30 XP` |
 | `SE_DEPLACER` | case voisine de type plaine ou arbres | change la position même si d'autres peons occupent la destination, marque la case d'arrivée comme visitée, donne `5 XP`, coûte `5 PV`, puis exécute automatiquement `VOIR` depuis la nouvelle position sans consommer un second tour si le peon survit |
 | `ATTAQUER` | au moins un autre peon vivant d'une équipe adverse occupe la même case que l'attaquant | cible un ennemi présent sur la même case, lui retire des PV selon les règles de combat, donne `40 XP` à l'attaquant ou `60 XP` si l'attaque tue la cible, et donne `40 XP` au peon attaqué uniquement s'il survit |
 | `COMMUNIQUER` | destinataires alliés à portée | partage une information/perception |

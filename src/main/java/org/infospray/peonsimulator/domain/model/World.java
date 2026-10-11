@@ -18,6 +18,7 @@ public class World {
     private double foodCellPercentage;
     private int minFoodPerCell;
     private int maxFoodPerCell;
+    private int sheepCount;
     private int hungerHealthLossPerTurn;
     private int maxRounds;
     private long seed;
@@ -31,6 +32,7 @@ public class World {
     private Map<UUID, Grave> graves = new LinkedHashMap<>();
     private Map<UUID, House> houses = new LinkedHashMap<>();
     private Map<UUID, WoodBundle> woodBundles = new LinkedHashMap<>();
+    private Map<UUID, Sheep> sheep = new LinkedHashMap<>();
 
     public World() {
     }
@@ -45,6 +47,7 @@ public class World {
     public double getFoodCellPercentage() { return this.foodCellPercentage; }
     public int getMinFoodPerCell() { return this.minFoodPerCell; }
     public int getMaxFoodPerCell() { return this.maxFoodPerCell; }
+    public int getSheepCount() { return this.sheepCount; }
     public int getHungerHealthLossPerTurn() { return this.hungerHealthLossPerTurn; }
     public int getMaxRounds() { return this.maxRounds; }
     public long getSeed() { return this.seed; }
@@ -58,6 +61,7 @@ public class World {
     public Map<UUID, Grave> getGraves() { return this.graves; }
     public Map<UUID, House> getHouses() { return this.houses; }
     public Map<UUID, WoodBundle> getWoodBundles() { return this.woodBundles; }
+    public Map<UUID, Sheep> getSheep() { return this.sheep; }
     public void setId(UUID id) { this.id = id; }
     public void setName(String name) { this.name = name; }
     public void setStatus(WorldStatus status) { this.status = status; }
@@ -74,6 +78,7 @@ public class World {
     public void loadLegacyFoodCellRatio(double value) { this.foodCellPercentage = value * 100; }
     public void setMinFoodPerCell(int value) { this.minFoodPerCell = value; }
     public void setMaxFoodPerCell(int value) { this.maxFoodPerCell = value; }
+    public void setSheepCount(int value) { this.sheepCount = Math.max(0, value); }
     public void setHungerHealthLossPerTurn(int value) { this.hungerHealthLossPerTurn = value; }
     public void setMaxRounds(int value) { this.maxRounds = value; }
     public void setSeed(long seed) { this.seed = seed; }
@@ -92,6 +97,7 @@ public class World {
     }
     public void setHouses(Map<UUID, House> value) { this.houses = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public void setWoodBundles(Map<UUID, WoodBundle> value) { this.woodBundles = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setSheep(Map<UUID, Sheep> value) { this.sheep = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public House houseAt(HexCoordinate coordinate) { return this.houses.values().stream().filter(house -> house.getPosition().equals(coordinate)).findFirst().orElse(null); }
 
     public Cell cell(HexCoordinate coordinate) { return this.cells.get(key(coordinate)); }

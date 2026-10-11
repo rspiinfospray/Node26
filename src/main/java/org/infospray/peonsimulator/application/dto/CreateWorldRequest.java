@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
-public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, @NotEmpty List<@Valid TeamRequest> teams) {
+public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(0) @Max(500) Integer sheepCount, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, @NotEmpty List<@Valid TeamRequest> teams) {
     public record TeamRequest(@NotBlank String name, @Min(1) @Max(100) int peonCount) {
     }
 
@@ -21,6 +21,7 @@ public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) 
     public int resolvedFoodCellPercentage() { return this.foodCellPercentage == null ? 15 : this.foodCellPercentage; }
     public int resolvedMinFood() { return this.minFoodPerCell == null ? 1 : this.minFoodPerCell; }
     public int resolvedMaxFood() { return this.maxFoodPerCell == null ? 3 : this.maxFoodPerCell; }
+    public int resolvedSheepCount() { return this.sheepCount == null ? 10 : this.sheepCount; }
     public int resolvedHungerLoss() { return this.hungerHealthLossPerTurn == null ? 5 : this.hungerHealthLossPerTurn; }
     public int resolvedMaxRounds() { return this.maxRounds == null ? 100 : this.maxRounds; }
     public long resolvedSeed() { return this.seed == null ? System.currentTimeMillis() : this.seed; }

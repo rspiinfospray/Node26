@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Illuvatar — Simulateur de peons</title>
-    <link rel="stylesheet" href="/styles.css?v=20261006-18">
+    <link rel="stylesheet" href="/styles.css?v=20261011-19">
     <link rel="stylesheet" href="/journal.css?v=20261004-16">
 </head>
 <body>
@@ -35,6 +35,7 @@
                 <span>Séquence <strong id="sequenceValue">—</strong></span>
                 <span>Vivants <strong id="aliveValue">—</strong></span>
                 <span>Morts <strong id="deadValue">—</strong></span>
+                <span>Moutons <strong id="sheepValue">—</strong></span>
                 <div id="teamPopulationStats" class="team-population-stats"></div>
             </div>
             <div class="zoom-controls"><button id="zoomOut" class="icon-button small" title="Dézoomer">−</button><span id="zoomValue">100%</span><button id="zoomIn" class="icon-button small" title="Zoomer">+</button><button id="zoomReset" class="button tiny">Recentrer</button></div>
@@ -48,7 +49,7 @@
                 <p>Créez un monde pour laisser Illuvatar commencer son œuvre.</p>
                 <button id="emptyCreateButton" class="button primary">Créer le monde</button>
             </div>
-            <div class="legend"><span><i class="plain"></i>Plaine</span><span><i class="rock"></i>Roche</span><span><i class="tree"></i>Arbre</span><span><i class="food"></i>Nourriture</span><span><i class="grave"></i>Tombe</span><span><i class="house"></i>Maison</span><span><i class="wood-bundle"></i>Bois</span></div>
+            <div class="legend"><span><i class="plain"></i>Plaine</span><span><i class="rock"></i>Roche</span><span><i class="tree"></i>Arbre</span><span><i class="food"></i>Baies</span><span><i class="sheep"></i>Mouton</span><span><i class="grave"></i>Tombe</span><span><i class="house"></i>Maison</span><span><i class="wood-bundle"></i>Bois</span></div>
         </div>
         <div class="timeline">
             <strong class="timeline-title">Historique</strong>
@@ -117,6 +118,7 @@
                     <label class="form-wide">Cases avec nourriture (%)<input name="foodCellPercentage" type="number" min="0" max="100" step="1" value="15"></label>
                     <label>Quantité de nourriture min.<input name="minFoodPerCell" type="number" min="1" value="1"></label>
                     <label>Quantité de nourriture max.<input name="maxFoodPerCell" type="number" min="1" value="3"></label>
+                    <label class="form-wide">Nombre de moutons<input name="sheepCount" type="number" min="0" max="500" value="10"></label>
                 </div>
             </fieldset>
             <fieldset class="world-form-section">
@@ -146,6 +148,6 @@
 </dialog>
 
 <script src="/vendor/pixi.min.js?v=8.22.0"></script>
-<script type="module" src="/app.js?v=20261006-31"></script>
+<script type="module" src="/app.js?v=20261011-32"></script>
 </body>
 </html>

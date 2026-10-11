@@ -22,6 +22,16 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RuleBasedPeonDecisionProviderTest {
+    @Test
+    void shouldPreferMoreNutritiousSheepToBerriesWhenBothAreAvailable() {
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 20, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), Map.of(), Map.of(), List.of(), 1, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 1, List.of(new HexCoordinate(2, 2)));
+
+        PeonDecision decision = new RuleBasedPeonDecisionProvider(new GameDefaultsProperties()).decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.MANGER_MOUTON);
+        assertThat(decision.action().reason()).contains("soin supérieur du mouton");
+    }
+
     private final GameDefaultsProperties defaults = this.defaults();
     private final RuleBasedPeonDecisionProvider provider = new RuleBasedPeonDecisionProvider(this.defaults);
 

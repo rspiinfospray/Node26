@@ -5,7 +5,7 @@ const pixiApp = new PIXI.Application();
 await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
@@ -49,12 +49,12 @@ function applyCreationParameters(source) {
     const form = $('#createForm');
     const values = source ? {
         width:source.width, height:source.height, rockPercentage:source.rockPercentage, treePercentage:source.treePercentage,
-        foodCellPercentage:source.foodCellPercentage, minFoodPerCell:source.minFoodPerCell, maxFoodPerCell:source.maxFoodPerCell,
+        foodCellPercentage:source.foodCellPercentage, minFoodPerCell:source.minFoodPerCell, maxFoodPerCell:source.maxFoodPerCell, sheepCount:source.sheepCount,
         maxRounds:source.maxRounds, hungerHealthLossPerTurn:source.hungerHealthLossPerTurn
     } : {
         width:state.defaults.worldWidth, height:state.defaults.worldHeight, rockPercentage:state.defaults.rockPercentage,
         treePercentage:state.defaults.treePercentage, foodCellPercentage:state.defaults.foodCellPercentage,
-        minFoodPerCell:state.defaults.minFoodPerCell, maxFoodPerCell:state.defaults.maxFoodPerCell,
+        minFoodPerCell:state.defaults.minFoodPerCell, maxFoodPerCell:state.defaults.maxFoodPerCell, sheepCount:state.defaults.sheepCount,
         maxRounds:state.defaults.maxRounds, hungerHealthLossPerTurn:state.defaults.hungerHealthLossPerTurn
     };
     Object.entries(values).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value; });
@@ -149,6 +149,7 @@ function render() {
         $('#sequenceValue').textContent = '—';
         $('#aliveValue').textContent = '—';
         $('#deadValue').textContent = '—';
+        $('#sheepValue').textContent = '—';
         $('#teamPopulationStats').replaceChildren();
         $('#playButton').textContent = '▶ Démarrer';
         $('#playButton').disabled = true;
@@ -188,6 +189,7 @@ function renderPopulationStatistics(world) {
     const peons = Object.values(world.peons);
     $('#aliveValue').textContent = peons.filter(peon => peon.alive).length;
     $('#deadValue').textContent = peons.filter(peon => !peon.alive).length;
+    $('#sheepValue').textContent = Object.keys(world.sheep || {}).length;
     const container = $('#teamPopulationStats');
     container.replaceChildren();
     Object.values(world.teams).forEach(team => {
@@ -262,11 +264,13 @@ function drawWorld() {
     });
     Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
     if (!mental) {
+        drawSheep(Object.values(world.sheep || {}), geo, false);
         drawGraves(world, geo);
         visibleWoodBundles.forEach(bundle => drawWoodBundle(bundle.quantity, bundle.point, geo));
         Object.values(world.peons).filter(peon => peon.alive && !peon.insideHouseId).forEach(peon => drawPeon(peon, world, geo));
     }
     else if (selected) {
+        drawSheep(rememberedSheepPresentations(selected), geo, true);
         drawRememberedGraves(selected, geo);
         visibleWoodBundles.forEach(bundle => drawWoodBundle(bundle.quantity, bundle.point, geo));
         drawRememberedPeons(selected, world, geo);
@@ -274,6 +278,29 @@ function drawWorld() {
     }
     viewport._geometry = geo;
     pixiApp.render();
+}
+
+function rememberedSheepPresentations(selected) {
+    const newestBySheep = new Map();
+    Object.values(selected.mentalMap || {}).forEach(memory => (memory.rememberedSheepIds || []).forEach(sheepId => {
+        const previous = newestBySheep.get(sheepId);
+        if (!previous || memory.lastObservedAtSequence > previous.observedAtSequence) newestBySheep.set(sheepId, { id:sheepId, position:memory.coordinate, observedAtSequence:memory.lastObservedAtSequence });
+    }));
+    return [...newestBySheep.values()];
+}
+
+function drawSheep(sheep, geo, remembered) {
+    const groups = new Map();
+    sheep.forEach(item => { const key = `${item.position.q}:${item.position.r}`; groups.set(key, [...(groups.get(key) || []), item]); });
+    groups.forEach(items => items.forEach((item, index) => {
+        const point = centerOf(item.position, geo);
+        const angle = items.length === 1 ? 0 : index * Math.PI * 2 / items.length;
+        const spread = items.length === 1 ? 0 : geo.size * .28;
+        const sprite = new PIXI.Sprite(assets.sheep);
+        const size = Math.max(8, geo.size * 1.05);
+        sprite.anchor.set(.5); sprite.position.set(point.x + Math.cos(angle) * spread, point.y + Math.sin(angle) * spread); sprite.width = size; sprite.height = size; sprite.alpha = remembered ? .55 : 1;
+        pixiApp.stage.addChild(sprite);
+    }));
 }
 
 function drawHouse(house, geo) {
@@ -658,7 +685,7 @@ function renderEvents() {
 
 function visibleEvents() { return state.events.filter(event => event.sequenceNumber <= (state.world?.sequenceNumber ?? 0)); }
 function peonName(peonId) { return peonId ? state.world?.peons?.[peonId]?.firstName || state.liveWorld?.peons?.[peonId]?.firstName || `Peon ${peonId.slice(0, 8)}` : null; }
-function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
+function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger des baies', MANGER_MOUTON:'Manger un mouton', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
 function friendlyPurpose(purpose) { return ({ SURVIVRE:'survivre', GAGNER_DES_NIVEAUX:'gagner des niveaux', AIDER_LES_ALLIES:'aider les autres peons' })[purpose] || purpose?.replaceAll('_', ' ').toLowerCase(); }
 function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', NO_WOOD_BUNDLE:'aucun fagot de bois sur la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
 function coordinate(value) { return value ? `(${value.q}, ${value.r})` : ''; }
@@ -670,6 +697,8 @@ function eventDescription(event) {
         case 'PEON_SAW': return `${payload.visibleCells ?? 0} case(s) visible(s) autour du peon.`;
         case 'FOOD_CONSUMED': return `Nourriture en ${coordinate(payload.position)} : ${payload.quantityBefore} → ${payload.quantityAfter}.`;
         case 'PEON_ATE': return `PV : ${payload.healthBefore} → ${payload.healthAfter}.`;
+        case 'SHEEP_EATEN': return `Mouton mangé en ${coordinate(payload.position)} : PV ${payload.healthBefore} → ${payload.healthAfter}, puis gain de 30 XP.`;
+        case 'SHEEP_MOVED': return `Le mouton se déplace de ${coordinate(payload.from)} vers ${coordinate(payload.to)}.`;
         case 'PEON_ATTACKED': return `${peonName(event.peonId)} attaque ${peonName(payload.targetPeonId)} : ${payload.damage} dégâts, PV ${payload.healthBefore} → ${payload.healthAfter}${payload.lethal ? ` · coup mortel, ${payload.attackerExperienceGain} XP pour le vainqueur` : ` · ${payload.attackerExperienceGain ?? 40} XP pour l’attaquant`}.`;
         case 'PEON_EXPERIENCE_GAINED': return `+${payload.amount} XP, total : ${payload.experienceAfter} XP.`;
         case 'PEON_LEVELED_UP': return `Niveau ${payload.levelBefore} → ${payload.levelAfter} · PV max ${payload.maxHealthBefore} → ${payload.maxHealthAfter} · dégâts ${payload.attackDamageBefore} → ${payload.attackDamageAfter}.`;
@@ -700,7 +729,7 @@ function eventDescription(event) {
     }
 }
 
-function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Nourriture consommée', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
+function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Baies consommées', SHEEP_EATEN:'Mouton mangé', SHEEP_MOVED:'Déplacement d’un mouton', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
 
 function escapeHtml(value) {
     const element = document.createElement('span');
@@ -816,7 +845,7 @@ $('#createForm').addEventListener('submit', async event => {
     const duplicateWorld = state.worlds.find(world => world.name?.trim().toLocaleLowerCase('fr') === data.name.trim().toLocaleLowerCase('fr'));
     if (duplicateWorld) { $('#formError').textContent = `Un monde nomm\u00e9 "${data.name.trim()}" existe d\u00e9j\u00e0.`; return; }
     const number = key => Number(data[key]);
-    const request = { name:data.name.trim(), width:number('width'), height:number('height'), rockPercentage:number('rockPercentage'), treePercentage:number('treePercentage'), foodCellPercentage:number('foodCellPercentage'), minFoodPerCell:number('minFoodPerCell'), maxFoodPerCell:number('maxFoodPerCell'), hungerHealthLossPerTurn:number('hungerHealthLossPerTurn'), maxRounds:number('maxRounds'), teams:[{name:data.redName.trim(),peonCount:number('redCount')},{name:data.blueName.trim(),peonCount:number('blueCount')}] };
+    const request = { name:data.name.trim(), width:number('width'), height:number('height'), rockPercentage:number('rockPercentage'), treePercentage:number('treePercentage'), foodCellPercentage:number('foodCellPercentage'), minFoodPerCell:number('minFoodPerCell'), maxFoodPerCell:number('maxFoodPerCell'), sheepCount:number('sheepCount'), hungerHealthLossPerTurn:number('hungerHealthLossPerTurn'), maxRounds:number('maxRounds'), teams:[{name:data.redName.trim(),peonCount:number('redCount')},{name:data.blueName.trim(),peonCount:number('blueCount')}] };
     try { await api('/api/worlds', { method:'POST', body:JSON.stringify(request) }); dialog.close(); await loadWorlds(true); } catch (error) { $('#formError').textContent = error.message; }
 });
 
