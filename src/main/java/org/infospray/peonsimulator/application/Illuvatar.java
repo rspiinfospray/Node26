@@ -238,19 +238,46 @@ public class Illuvatar {
         for (int q = 0; q < world.getWidth(); q++) {
             for (int r = 0; r < world.getHeight(); r++) {
                 if (new HexCoordinate(centerQ, centerR).distanceTo(new HexCoordinate(q, r)) > radius) { continue; }
-                double terrainRoll = random.nextDouble();
-                double rockProbability = world.getRockPercentage() / 100.0;
-                double treeProbability = world.getTreePercentage() / 100.0;
-                TerrainType terrain = terrainRoll < rockProbability ? TerrainType.ROCK : terrainRoll < rockProbability + treeProbability ? TerrainType.TREE : TerrainType.PLAIN;
-                Cell cell = new Cell(new HexCoordinate(q, r), terrain, 0);
-                if (terrain == TerrainType.TREE) { cell.setTreeHealthPoints(this.defaults.getTreeHealthPoints()); }
-                world.addCell(cell);
+                world.addCell(new Cell(new HexCoordinate(q, r), TerrainType.PLAIN, 0));
             }
         }
-        Cell center = world.cell(new HexCoordinate(centerQ, centerR));
-        center.setTerrain(TerrainType.PLAIN);
+        HexCoordinate centerCoordinate = new HexCoordinate(centerQ, centerR);
+        List<Cell> terrainCandidates = world.getCells().values().stream().filter(cell -> !cell.getCoordinate().equals(centerCoordinate)).toList();
+        int totalCells = world.getCells().size();
+        int rockCount = Math.min(terrainCandidates.size(), (int) Math.round(totalCells * world.getRockPercentage() / 100.0));
+        Set<String> rockKeys = this.selectClusteredTerrainKeys(terrainCandidates, rockCount, random);
+        List<Cell> treeCandidates = terrainCandidates.stream().filter(cell -> !rockKeys.contains(World.key(cell.getCoordinate()))).toList();
+        int treeCount = Math.min(treeCandidates.size(), (int) Math.round(totalCells * world.getTreePercentage() / 100.0));
+        Set<String> treeKeys = this.selectClusteredTerrainKeys(treeCandidates, treeCount, random);
+        world.getCells().values().forEach(cell -> {
+            String key = World.key(cell.getCoordinate());
+            if (rockKeys.contains(key)) { cell.setTerrain(TerrainType.ROCK); }
+            if (treeKeys.contains(key)) { cell.setTerrain(TerrainType.TREE); cell.setTreeHealthPoints(this.defaults.getTreeHealthPoints()); }
+        });
+        Cell center = world.cell(centerCoordinate);
         Set<String> reachable = this.reachablePlainKeys(world, center.getCoordinate());
         world.getCells().forEach((key, cell) -> { if (cell.getTerrain() != TerrainType.ROCK && !reachable.contains(key)) { cell.setTerrain(TerrainType.ROCK); } });
+    }
+
+    private Set<String> selectClusteredTerrainKeys(List<Cell> candidates, int requestedCount, Random random) {
+        int count = Math.min(requestedCount, candidates.size());
+        if (count == 0) { return Set.of(); }
+        Map<String, Cell> available = candidates.stream().collect(java.util.stream.Collectors.toMap(cell -> World.key(cell.getCoordinate()), cell -> cell, (left, right) -> left, LinkedHashMap::new));
+        Set<String> selected = new HashSet<>();
+        int clusteredTarget = Math.max(1, (int) Math.ceil(count * 0.85));
+        int clusterCount = Math.max(1, Math.min(clusteredTarget, (int) Math.ceil(count / 25.0)));
+        for (int index = 0; index < clusterCount; index++) { this.selectRandomAvailableKey(available, selected, random); }
+        while (selected.size() < clusteredTarget) {
+            List<String> frontier = selected.stream().map(available::get).filter(java.util.Objects::nonNull).flatMap(cell -> cell.getCoordinate().neighbors().stream()).map(World::key).filter(available::containsKey).filter(key -> !selected.contains(key)).distinct().toList();
+            if (frontier.isEmpty()) { this.selectRandomAvailableKey(available, selected, random); } else { selected.add(frontier.get(random.nextInt(frontier.size()))); }
+        }
+        while (selected.size() < count) { this.selectRandomAvailableKey(available, selected, random); }
+        return selected;
+    }
+
+    private void selectRandomAvailableKey(Map<String, Cell> available, Set<String> selected, Random random) {
+        List<String> remaining = available.keySet().stream().filter(key -> !selected.contains(key)).toList();
+        if (!remaining.isEmpty()) { selected.add(remaining.get(random.nextInt(remaining.size()))); }
     }
 
     private Set<String> reachablePlainKeys(World world, HexCoordinate start) {
