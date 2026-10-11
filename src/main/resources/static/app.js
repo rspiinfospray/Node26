@@ -321,12 +321,13 @@ function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
     const point = centerOf(item.position, geo);
     if (kind === 'granary' && item.id === state.selectedGranaryId) { pixiApp.stage.addChild(new PIXI.Graphics().circle(point.x, point.y, Math.max(8, geo.size * .78)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) })); }
     const sprite = new PIXI.Sprite(texture);
-    const size = Math.max(10, geo.size * 1.35);
+    const size = kind === 'field' ? Math.max(24, geo.size * 3) : Math.max(10, geo.size * 1.35);
     sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
     pixiApp.stage.addChild(sprite);
     if (quantity > 0 && geo.size > 10) {
         const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } } });
-        label.anchor.set(.5); label.position.set(point.x + size * .3, point.y + size * .3); pixiApp.stage.addChild(label);
+        const labelOffset = kind === 'field' ? geo.size * .62 : size * .3;
+        label.anchor.set(.5); label.position.set(point.x + labelOffset, point.y + labelOffset); pixiApp.stage.addChild(label);
     }
 }
 
