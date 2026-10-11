@@ -210,6 +210,12 @@ public class Illuvatar {
     public List<World> getWorlds() { return this.worldRepository.findAll(); }
     public World getWorldAtSequence(UUID worldId, long sequenceNumber) { return this.worldRepository.findAtSequence(worldId, sequenceNumber).orElseThrow(() -> new IllegalArgumentException("Aucun état historique pour la séquence " + sequenceNumber)); }
     public List<SimulationEvent> getEvents(UUID worldId) { return this.eventRepository.findByWorldId(worldId); }
+    public PeonDecision replayDecision(UUID worldId, UUID peonId, long sequenceNumber) {
+        World world = this.getWorldAtSequence(worldId, Math.max(0, sequenceNumber - 1));
+        Peon peon = world.getPeons().get(peonId);
+        if (peon == null) { throw new IllegalArgumentException("Peon introuvable: " + peonId); }
+        return this.decisionProvider.decide(this.buildDecisionContext(world, peon));
+    }
 
     @Transactional
     public synchronized void deleteAllWorlds() {

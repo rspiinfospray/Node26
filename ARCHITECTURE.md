@@ -633,6 +633,8 @@ Un projet d'autonomie alimentaire suit une exploitation déterminée : une maiso
 
 En situation de faim, le peon choisit une seule destination alimentaire en comparant la distance, le coût en PV du trajet et le soin attendu des baies, du blé et des moutons. Sous le seuil de recherche de nourriture, seules une consommation immédiate ou une progression sûre vers cette cible peuvent être retenues ; les bonus d'exploration et d'observation ne peuvent donc plus provoquer une oscillation mortelle entre plusieurs sources.
 
+L'API de diagnostic permet de filtrer les événements côté serveur par peon, tours et types, d'obtenir une chronologie compacte des décisions, de détecter les oscillations et actions non vitales à PV critiques, de consulter le voisinage d'un snapshot et de rejouer sans mutation une décision historique avec le moteur actuel. Le rejeu utilise l'état précédant la séquence demandée.
+
 L'autonomie alimentaire suit les phases `ETABLIR_UN_FOYER`, `CONSTRUIRE_UN_GRENIER`, `CREER_UN_PREMIER_CHAMP`, `ETENDRE_L_EXPLOITATION`, `REMPLIR_LA_RESERVE` et `MAINTENIR_L_AUTONOMIE`. La réserve cible couvre 12 tours de faim estimée. L'IHM expose le projet, la phase, la progression, les objectifs et la décomposition du score immédiat et du bonus stratégique.
 
 ## 17. Décisions à fixer avant l'implémentation métier détaillée
