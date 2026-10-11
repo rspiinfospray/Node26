@@ -5,7 +5,7 @@ const pixiApp = new PIXI.Application();
 await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png?v=20261011-2', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
