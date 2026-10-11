@@ -64,6 +64,7 @@ public class Illuvatar {
     private final PeonDecisionProvider decisionProvider;
     private final PeonFirstNameCatalog firstNameCatalog;
     private final GameDefaultsProperties defaults;
+    private final PeonStrategyPlanner strategyPlanner = new PeonStrategyPlanner();
 
     public Illuvatar(WorldRepository worldRepository, EventRepository eventRepository, ActionRequestPublisher actionRequestPublisher, DomainEventPublisher domainEventPublisher, PeonDecisionProvider decisionProvider, PeonFirstNameCatalog firstNameCatalog, GameDefaultsProperties defaults) {
         this.worldRepository = worldRepository;
@@ -129,6 +130,7 @@ public class Illuvatar {
         }
         long sequence = world.getSequenceNumber() + 1;
         world.setSequenceNumber(sequence);
+        this.strategyPlanner.update(world, actor, this.defaults);
         PeonDecisionContext context = this.buildDecisionContext(world, actor);
         PeonDecision peonDecision = this.decisionProvider.decide(context);
         PeonAction action = peonDecision.action();
@@ -144,6 +146,7 @@ public class Illuvatar {
         decisionPayload.put("selectedScore", peonDecision.selectedScore());
         decisionPayload.put("explorationChoice", peonDecision.explorationChoice());
         decisionPayload.put("candidates", peonDecision.candidates());
+        decisionPayload.put("longTermStrategy", actor.getLongTermStrategy());
         if (action.destination() != null) { decisionPayload.put("destination", action.destination()); }
         if (action.targetPeonId() != null) { decisionPayload.put("targetPeonId", action.targetPeonId()); }
         SimulationEvent decision = SimulationEvent.of(actionId, "PEON_DECISION_MADE", world.getId(), actor.getTeamId(), actor.getId(), world.getCurrentRound(), sequence, 0, decisionPayload);
@@ -370,7 +373,7 @@ public class Illuvatar {
         boolean sameTeamHouseNearby = world.getHouses().values().stream().filter(candidate -> candidate.getPosition().distanceTo(peon.getPosition()) >= 1 && candidate.getPosition().distanceTo(peon.getPosition()) <= 2).flatMap(candidate -> candidate.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(peon.getTeamId()));
         boolean alliedGranaryNearFieldSite = world.hasAlliedGranaryWithin(peon.getPosition(), peon.getTeamId(), this.defaults.getFieldGranaryRadius());
         int livingTeamPeonCount = (int) world.alivePeons().stream().filter(ally -> ally.getTeamId().equals(peon.getTeamId())).count();
-        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable && alliedGranaryNearFieldSite, buildable && sameTeamHouseNearby, livingTeamPeonCount);
+        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable && alliedGranaryNearFieldSite, buildable && sameTeamHouseNearby, livingTeamPeonCount, peon.getLongTermStrategy());
     }
 
     private void resolveAction(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -494,6 +497,8 @@ public class Illuvatar {
         }
         if (allies.isEmpty() && !houseInteraction) { this.reject(world, actor, request, events, index, "NO_ALLY_IN_RANGE"); return; }
         for (Peon ally : allies) {
+            actor.rememberAllyStrategy(ally, world.getCurrentRound());
+            ally.rememberAllyStrategy(actor, world.getCurrentRound());
             actor.getMentalMap().forEach((key, memory) -> {
                 RememberedCell existing = ally.getMentalMap().get(key);
                 if (existing == null || existing.getLastObservedAtSequence() < memory.getLastObservedAtSequence()) { ally.getMentalMap().put(key, memory); }

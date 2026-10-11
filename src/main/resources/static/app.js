@@ -709,10 +709,33 @@ function renderPeon() {
     $('#memoryValue').textContent = Object.keys(peon.mentalMap || {}).length;
     $('#woodValue').textContent = peon.inventory?.WOOD || 0;
     $('#shelterValue').textContent = peon.insideHouseId ? 'À l’abri dans une maison · faim réduite de moitié' : 'À l’extérieur';
+    renderLongTermStrategy(peon);
     renderPersonality(peon);
     renderPeonActions(peon);
     $('#peonId').textContent = peon.id;
 }
+
+function renderLongTermStrategy(peon) {
+    const strategy = peon.longTermStrategy;
+    $('#strategyPanel').hidden = !strategy;
+    if (!strategy) return;
+    $('#strategyName').textContent = friendlyStrategy(strategy.type);
+    $('#strategyStatus').textContent = friendlyStrategyStatus(strategy.status);
+    $('#strategyPhase').textContent = `Phase : ${friendlyStrategyPhase(strategy.phase)}`;
+    $('#strategyProgressBar').style.width = `${Math.max(0, Math.min(100, strategy.progress || 0))}%`;
+    $('#strategyProgressText').textContent = `Progression ${Math.round(strategy.progress || 0)} % · valeur stratégique ${Number(strategy.expectedValue || 0).toFixed(1)}`;
+    $('#strategyTacticalObjective').textContent = strategy.tacticalObjective || 'Aucun objectif tactique';
+    $('#strategyNextPriority').textContent = strategy.nextPriority || 'Observer la situation';
+    $('#strategyDuration').textContent = `${Math.max(0, (state.world?.currentRound || 0) - strategy.startedAtRound)} tour(s)`;
+    $('#strategyHorizon').textContent = `${strategy.horizonRounds || 40} tours`;
+    $('#strategyTacticalHorizon').textContent = `${Math.max(0, (strategy.tacticalUntilRound || state.world?.currentRound || 0) - (state.world?.currentRound || 0))} tour(s) restant(s)`;
+    const labels = { maisons:'Maisons', maisonsCible:'Maisons visées', greniers:'Greniers', greniersCible:'Greniers visés', champs:'Champs', champsCible:'Champs visés', bleStocke:'Blé stocké', reserveCible:'Réserve cible', bois:'Bois', boisMaison:'Bois requis', exploration:'Monde connu', explorationCible:'Exploration cible', menacesConnues:'Menaces connues', alliesVivants:'Alliés vivants' };
+    $('#strategyObjectives').innerHTML = Object.entries(strategy.objectives || {}).map(([key, value]) => `<span><small>${escapeHtml(labels[key] || key)}</small><strong>${value}${key.startsWith('exploration') ? ' %' : ''}</strong></span>`).join('');
+}
+
+function friendlyStrategy(type) { return ({ AUTONOMIE_ALIMENTAIRE:'Autonomie alimentaire de l’équipe', CONSTRUIRE_UN_FOYER:'Créer et développer un foyer', EXPLORER_LE_MONDE:'Explorer et cartographier le monde', PROTEGER_L_EQUIPE:'Protéger l’équipe et son territoire' })[type] || type?.replaceAll('_', ' ').toLowerCase(); }
+function friendlyStrategyStatus(status) { return ({ EN_COURS:'En cours', ACCOMPLIE:'Objectif atteint', ABANDONNEE:'Abandonnée' })[status] || status; }
+function friendlyStrategyPhase(phase) { return phase?.replaceAll('_', ' ').toLowerCase() || 'évaluation'; }
 
 function renderPersonality(peon) {
     const personality = peon.personality || { prudence:50, aggressiveness:50, curiosity:50, solidarity:50 };
@@ -729,7 +752,7 @@ function renderPeonActions(peon) {
     const actions = visibleEvents().filter(event => event.peonId === peon.id && event.eventType === 'PEON_DECISION_MADE').slice(-8).reverse();
     $('#peonActionCount').textContent = actions.length;
     $('#peonActionLog').innerHTML = actions.length
-        ? actions.map(event => { const candidates = event.payload?.candidates || []; const alternatives = candidates.slice(0, 3).map(candidate => `${friendlyAction(candidate.actionType)} ${Number(candidate.score).toFixed(1)}`).join(' · '); return `<article class="peon-action"><strong>${friendlyAction(event.payload?.actionType)} <em>score ${Number(event.payload?.selectedScore ?? 0).toFixed(1)}</em></strong><span>Tour ${event.roundNumber} · action n° ${event.sequenceNumber}${event.payload?.explorationChoice ? ' · expérimentation' : ''}</span><p>${eventDescription(event)}</p>${alternatives ? `<small>Options : ${alternatives}</small>` : ''}</article>`; }).join('')
+        ? actions.map(event => { const candidates = event.payload?.candidates || []; const selectedCandidate = candidates.find(candidate => candidate.actionType === event.payload?.actionType && (!candidate.destination || JSON.stringify(candidate.destination) === JSON.stringify(event.payload?.destination))) || candidates.find(candidate => candidate.actionType === event.payload?.actionType); const strategyEntry = Object.entries(selectedCandidate?.factors || {}).find(([key]) => key.startsWith('projet à long terme')); const strategyBonus = Number(strategyEntry?.[1] || 0); const immediateScore = Number(event.payload?.selectedScore || 0) - strategyBonus; const strategyLine = strategyEntry ? `<small class="strategy-score">Score immédiat ${immediateScore.toFixed(1)} · ${escapeHtml(strategyEntry[0])} +${strategyBonus.toFixed(1)} · score final ${Number(event.payload?.selectedScore || 0).toFixed(1)}</small>` : ''; const alternatives = candidates.slice(0, 3).map(candidate => `${friendlyAction(candidate.actionType)} ${Number(candidate.score).toFixed(1)}`).join(' · '); return `<article class="peon-action"><strong>${friendlyAction(event.payload?.actionType)} <em>score ${Number(event.payload?.selectedScore ?? 0).toFixed(1)}</em></strong><span>Tour ${event.roundNumber} · action n° ${event.sequenceNumber}${event.payload?.explorationChoice ? ' · expérimentation' : ''}</span><p>${eventDescription(event)}</p>${strategyLine}${alternatives ? `<small>Options : ${alternatives}</small>` : ''}</article>`; }).join('')
         : '<p class="muted action-empty">Aucune action à cette étape de la simulation.</p>';
 }
 

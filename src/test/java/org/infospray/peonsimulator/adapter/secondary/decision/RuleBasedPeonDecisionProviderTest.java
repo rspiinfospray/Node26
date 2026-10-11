@@ -7,12 +7,15 @@ import org.infospray.peonsimulator.domain.model.ActionKnowledge;
 import org.infospray.peonsimulator.domain.model.ActionType;
 import org.infospray.peonsimulator.domain.model.Cell;
 import org.infospray.peonsimulator.domain.model.HexCoordinate;
+import org.infospray.peonsimulator.domain.model.LongTermStrategy;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
 import org.infospray.peonsimulator.domain.model.PeonRelation;
 import org.infospray.peonsimulator.domain.model.RememberedCell;
 import org.infospray.peonsimulator.domain.model.RememberedGraveObservation;
 import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.TerrainType;
+import org.infospray.peonsimulator.domain.model.StrategicPhase;
+import org.infospray.peonsimulator.domain.model.StrategyType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -35,6 +38,18 @@ class RuleBasedPeonDecisionProviderTest {
     }
 
     @Test
+    void shouldExposeLongTermStrategyBonusInActionScore() {
+        PeonDecisionContext base = this.agricultureContext(1, 5);
+        LongTermStrategy strategy = new LongTermStrategy(StrategyType.AUTONOMIE_ALIMENTAIRE, 1, base.teamId());
+        strategy.setPhase(StrategicPhase.ETENDRE_L_EXPLOITATION);
+        PeonDecisionContext context = new PeonDecisionContext(base.peonId(), base.teamId(), base.healthPoints(), base.maxHealthPoints(), base.experiencePoints(), base.level(), base.position(), base.concealedByTree(), base.sequenceNumber(), base.decisionSeed(), base.personality(), base.learnedActions(), base.mentalMap(), base.peonsOnCurrentCell(), base.foodOnCurrentCell(), base.traversableNeighbors(), base.currentRound(), base.lastObservationRound(), base.currentTerrain(), base.treeHealthPoints(), base.woodQuantity(), base.woodBundleQuantity(), base.buildable(), base.house(), base.knownHouses(), base.usefulCommunicationCount(), base.consecutiveCommunicationCount(), base.sheepOnCurrentCell(), base.knownSheepPositions(), base.field(), base.granary(), base.knownFields(), base.knownGranaries(), base.fieldBuildable(), base.granaryBuildable(), base.livingTeamPeonCount(), strategy);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.CONSTRUIRE_CHAMP).findFirst().orElseThrow().factors().keySet()).anyMatch(key -> key.startsWith("projet à long terme"));
+    }
+
+    @Test
     void shouldPreferMoreNutritiousSheepToBerriesWhenBothAreAvailable() {
         PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 20, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), Map.of(), Map.of(), List.of(), 1, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 1, List.of(new HexCoordinate(2, 2)));
 
@@ -42,6 +57,65 @@ class RuleBasedPeonDecisionProviderTest {
 
         assertThat(decision.action().type()).isEqualTo(ActionType.MANGER_MOUTON);
         assertThat(decision.action().reason()).contains("soin supérieur du mouton");
+    }
+
+    @Test
+    void shouldNotWasteFoodAtMaximumHealth() {
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedGranary granary = new PeonDecisionContext.ObservedGranary(UUID.randomUUID(), teamId, new HexCoordinate(2, 2), 10);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), Map.of(), Map.of(), List.of(), 2, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 1, List.of(new HexCoordinate(2, 2)), null, granary, List.of(), List.of(granary), false, false, 4, null);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.MANGER, ActionType.MANGER_MOUTON, ActionType.MANGER_BLE);
+    }
+
+    @Test
+    void shouldBuildGranaryInsteadOfSecondHouseDuringAgriculturalProject() {
+        PeonDecisionContext base = this.agricultureContext(4, 5);
+        LongTermStrategy strategy = new LongTermStrategy(StrategyType.AUTONOMIE_ALIMENTAIRE, 1, base.teamId());
+        strategy.setPhase(StrategicPhase.ETENDRE_L_EXPLOITATION);
+        strategy.setTargetArea(new HexCoordinate(3, 2));
+        PeonDecisionContext context = new PeonDecisionContext(base.peonId(), base.teamId(), base.healthPoints(), base.maxHealthPoints(), base.experiencePoints(), base.level(), base.position(), base.concealedByTree(), base.sequenceNumber(), base.decisionSeed(), base.personality(), base.learnedActions(), base.mentalMap(), base.peonsOnCurrentCell(), base.foodOnCurrentCell(), base.traversableNeighbors(), base.currentRound(), base.lastObservationRound(), base.currentTerrain(), base.treeHealthPoints(), 200, base.woodBundleQuantity(), true, base.house(), base.knownHouses(), base.usefulCommunicationCount(), base.consecutiveCommunicationCount(), base.sheepOnCurrentCell(), base.knownSheepPositions(), base.field(), base.granary(), base.knownFields(), base.knownGranaries(), false, true, base.livingTeamPeonCount(), strategy);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.CONSTRUIRE_GRENIER);
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.CONSTRUIRE_MAISON).findFirst().orElseThrow().factors()).containsEntry("construction contraire au projet", -140.0);
+    }
+
+    @Test
+    void shouldMoveTowardPersonalFarmTarget() {
+        UUID teamId = UUID.randomUUID();
+        LongTermStrategy strategy = new LongTermStrategy(StrategyType.AUTONOMIE_ALIMENTAIRE, 1, teamId);
+        strategy.setPhase(StrategicPhase.CONSTRUIRE_UN_GRENIER);
+        strategy.setTargetArea(new HexCoordinate(4, 2));
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, new HexCoordinate(8, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(7, 2), new HexCoordinate(9, 2)), 10, 9, TerrainType.PLAIN, 0, 100, 0, false, null, List.of(), 0, 0, 0, List.of(), null, null, List.of(), List.of(), false, false, 4, strategy);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.SE_DEPLACER);
+        assertThat(decision.action().destination()).isEqualTo(new HexCoordinate(7, 2));
+    }
+
+    @Test
+    void shouldChooseAdjacentGranaryInsteadOfOscillatingTowardBerriesAtCriticalHealth() {
+        UUID teamId = UUID.randomUUID();
+        HexCoordinate position = new HexCoordinate(2, 24);
+        HexCoordinate granaryPosition = new HexCoordinate(1, 25);
+        HexCoordinate berryPosition = new HexCoordinate(3, 23);
+        RememberedCell berryMemory = new RememberedCell(new Cell(berryPosition, TerrainType.PLAIN, 2), true, 100);
+        PeonDecisionContext.ObservedHouse house = new PeonDecisionContext.ObservedHouse(UUID.randomUUID(), UUID.randomUUID(), teamId, position, true, true);
+        PeonDecisionContext.ObservedGranary granary = new PeonDecisionContext.ObservedGranary(UUID.randomUUID(), teamId, granaryPosition, 20);
+        LongTermStrategy strategy = new LongTermStrategy(StrategyType.EXPLORER_LE_MONDE, 1, teamId);
+        strategy.setPhase(StrategicPhase.REJOINDRE_LA_FRONTIERE);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 13, 170, 0, 1, position, false, 100, 42, new PeonPersonality(50, 20, 80, 50), Map.of(), Map.of("3:23", berryMemory), List.of(), 0, List.of(granaryPosition, berryPosition), 100, 99, TerrainType.PLAIN, 0, 0, 0, false, house, List.of(house), 0, 0, 0, List.of(), null, null, List.of(), List.of(granary), false, false, 4, strategy);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.SE_DEPLACER);
+        assertThat(decision.action().destination()).isEqualTo(granaryPosition);
+        assertThat(decision.action().reason()).contains("route alimentaire prioritaire");
     }
 
     private final GameDefaultsProperties defaults = this.defaults();
@@ -210,7 +284,7 @@ class RuleBasedPeonDecisionProviderTest {
         HexCoordinate position = new HexCoordinate(2, 2);
         PeonDecisionContext.ObservedGranary granary = new PeonDecisionContext.ObservedGranary(UUID.randomUUID(), teamId, new HexCoordinate(3, 2), storedWheat);
         List<PeonDecisionContext.ObservedField> fields = java.util.stream.IntStream.range(0, fieldCount).mapToObj(index -> new PeonDecisionContext.ObservedField(UUID.randomUUID(), teamId, new HexCoordinate(3 + index, 3), 0)).toList();
-        return new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, position, false, 10, 42, new PeonPersonality(50, 50, 50, 70), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 200, 0, true, null, List.of(), 0, 0, 0, List.of(), null, null, fields, List.of(granary), true, false, 6);
+        return new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, position, false, 10, 42, new PeonPersonality(50, 50, 50, 70), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 200, 0, true, null, List.of(), 0, 0, 0, List.of(), null, null, fields, List.of(granary), true, false, 6, null);
     }
 
     private GameDefaultsProperties defaults() {

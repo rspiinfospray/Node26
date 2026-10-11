@@ -619,7 +619,23 @@ En production, le scheduler doit être séparé logiquement des instances d'API,
 - Le moteur de décision traite chaque grenier comme le centre d'une exploitation : il vise au minimum 3 champs, puis adapte la cible au nombre de peons vivants (`arrondi supérieur(peons / 2) + 1`). Il valorise les champs supplémentaires tant que la cible n'est pas atteinte et que le grenier n'est pas plein.
 - Chaque nouveau champ est rattaché durablement au grenier allié le plus proche dans le rayon autorisé. L'inspecteur du grenier affiche son équipe, son stock et cette exploitation, et relie visuellement le grenier à ses champs sur la carte.
 
-## 16. Décisions à fixer avant l'implémentation métier détaillée
+## 16. Planification stratégique des peons
+
+Chaque `Peon` persiste un `LongTermStrategy` dans l'état du monde et les snapshots. Cette stratégie contient son type, son statut, sa phase, son horizon, sa période d'engagement, ses cibles, ses objectifs chiffrés, sa progression, son objectif tactique et sa prochaine priorité.
+
+Le planificateur distingue trois horizons : stratégie durable (10 à 50 tours), objectif tactique et décision immédiate. La stratégie est suivie chaque tour, réévaluée complètement tous les 5 tours et conservée pendant au moins 10 tours. Elle apporte des facteurs supplémentaires au moteur utilitaire sans court-circuiter ses protections vitales et son filtre contre les actions mortelles.
+
+Les quatre stratégies initiales sont `AUTONOMIE_ALIMENTAIRE`, `CONSTRUIRE_UN_FOYER`, `EXPLORER_LE_MONDE` et `PROTEGER_L_EQUIPE`. Leur sélection dépend des besoins observés, de l'état de l'équipe, de la personnalité, des résultats des actions passées et des engagements alliés connus. Les engagements stratégiques sont échangés lors de `COMMUNIQUER`, ce qui pénalise les projets déjà suffisamment couverts sans créer de hiérarchie entre les peons.
+
+La répartition des rôles tient aussi compte des stratégies actives de l'équipe afin d'éviter qu'un besoin alimentaire ne monopolise tous les peons. Le déficit de réserve est normalisé, les peons sans maison conservent un intérêt pour le foyer et un rôle de protection reste possible même avant la découverte d'un ennemi. La nourriture n'est consommée que si le peon a réellement des PV à récupérer ; lorsque la réserve connue est vide, rejoindre un champ mûr devient prioritaire.
+
+Un projet d'autonomie alimentaire suit une exploitation déterminée : une maison dont le peon est propriétaire, un grenier situé à une ou deux cases de cette maison, puis les champs rattachés à ce grenier. Les bâtiments agricoles éloignés des alliés ne font pas progresser ce projet personnel. Le déplacement tactique rapproche le peon de la zone constructible de son exploitation, la cible de bois dépend de l'étape courante et une construction de maison contraire à la phase agricole reçoit un malus dissuasif.
+
+En situation de faim, le peon choisit une seule destination alimentaire en comparant la distance, le coût en PV du trajet et le soin attendu des baies, du blé et des moutons. Sous le seuil de recherche de nourriture, seules une consommation immédiate ou une progression sûre vers cette cible peuvent être retenues ; les bonus d'exploration et d'observation ne peuvent donc plus provoquer une oscillation mortelle entre plusieurs sources.
+
+L'autonomie alimentaire suit les phases `ETABLIR_UN_FOYER`, `CONSTRUIRE_UN_GRENIER`, `CREER_UN_PREMIER_CHAMP`, `ETENDRE_L_EXPLOITATION`, `REMPLIR_LA_RESERVE` et `MAINTENIR_L_AUTONOMIE`. La réserve cible couvre 12 tours de faim estimée. L'IHM expose le projet, la phase, la progression, les objectifs et la décomposition du score immédiat et du bonus stratégique.
+
+## 17. Décisions à fixer avant l'implémentation métier détaillée
 
 - éventuelle réapparition de nourriture pendant la simulation ;
 - coût/gain de PV exact des actions, en complément des `5 PV` de faim appliqués à chaque tour ;
