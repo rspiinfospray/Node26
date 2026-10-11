@@ -1,4 +1,4 @@
-const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, selectedHouseId: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const viewport = $('#worldViewport');
 const pixiApp = new PIXI.Application();
@@ -76,6 +76,7 @@ async function selectWorld(worldId) {
     resetView();
     state.selectedPeonId = Object.values(state.world.peons).find(peon => peon.alive)?.id || null;
     state.selectedHouseId = null;
+    state.selectedGranaryId = null;
     connectStream(worldId);
     render();
 }
@@ -162,6 +163,7 @@ function render() {
         $('#peonEmpty').hidden = false;
         $('#peonDetails').hidden = true;
         $('#houseDetails').hidden = true;
+        $('#granaryDetails').hidden = true;
         $('#eventCount').textContent = '0';
         $('#eventLog').innerHTML = '';
         return;
@@ -252,7 +254,7 @@ function drawWorld() {
     if (!world) { pixiApp.render(); return; }
     const geo = geometry(world, rect);
     const selected = world.peons[state.selectedPeonId];
-    const mental = !state.selectedHouseId && $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
+    const mental = !state.selectedHouseId && !state.selectedGranaryId && $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
     const visibleWoodBundles = [];
     Object.values(world.cells).forEach(cell => {
         const known = !mental || mental[`${cell.coordinate.q}:${cell.coordinate.r}`];
@@ -262,9 +264,10 @@ function drawWorld() {
         if (known && rendered.foodQuantity > 0) { drawFood(rendered, point, geo); }
         if (known && rendered.woodBundleQuantity > 0) { visibleWoodBundles.push({ quantity:rendered.woodBundleQuantity, point }); }
     });
+    drawSelectedGranaryNetwork(world, geo);
     Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
-    Object.values(world.wheatFields || {}).filter(field => !mental || mental[`${field.position.q}:${field.position.r}`]).forEach(field => drawAgriculturalBuilding(field, geo, assets.field, field.wheatQuantity));
-    Object.values(world.granaries || {}).filter(granary => !mental || mental[`${granary.position.q}:${granary.position.r}`]).forEach(granary => drawAgriculturalBuilding(granary, geo, assets.granary, granary.wheatQuantity));
+    Object.values(world.wheatFields || {}).filter(field => !mental || mental[`${field.position.q}:${field.position.r}`]).forEach(field => drawAgriculturalBuilding(field, geo, assets.field, field.wheatQuantity, 'field'));
+    Object.values(world.granaries || {}).filter(granary => !mental || mental[`${granary.position.q}:${granary.position.r}`]).forEach(granary => drawAgriculturalBuilding(granary, geo, assets.granary, granary.wheatQuantity, 'granary'));
     if (!mental) {
         drawSheep(Object.values(world.sheep || {}), geo, false);
         drawGraves(world, geo);
@@ -314,8 +317,9 @@ function drawHouse(house, geo) {
     pixiApp.stage.addChild(sprite);
 }
 
-function drawAgriculturalBuilding(item, geo, texture, quantity) {
+function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
     const point = centerOf(item.position, geo);
+    if (kind === 'granary' && item.id === state.selectedGranaryId) { pixiApp.stage.addChild(new PIXI.Graphics().circle(point.x, point.y, Math.max(8, geo.size * .78)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) })); }
     const sprite = new PIXI.Sprite(texture);
     const size = Math.max(10, geo.size * 1.35);
     sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
@@ -324,6 +328,30 @@ function drawAgriculturalBuilding(item, geo, texture, quantity) {
         const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } } });
         label.anchor.set(.5); label.position.set(point.x + size * .3, point.y + size * .3); pixiApp.stage.addChild(label);
     }
+}
+
+function linkedFields(granary) {
+    return Object.values(state.world?.wheatFields || {}).filter(field => field.teamId === granary.teamId && (field.granaryId === granary.id || !field.granaryId && hexDistance(field.position, granary.position) <= 4));
+}
+
+function hexDistance(left, right) {
+    const dq = left.q - right.q; const dr = left.r - right.r;
+    return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
+function drawSelectedGranaryNetwork(world, geo) {
+    const granary = world.granaries?.[state.selectedGranaryId];
+    if (!granary) return;
+    const origin = centerOf(granary.position, geo);
+    const color = world.teams?.[granary.teamId]?.color || '#ffd166';
+    const links = new PIXI.Graphics();
+    linkedFields(granary).forEach(field => {
+        const target = centerOf(field.position, geo);
+        links.moveTo(origin.x, origin.y).lineTo(target.x, target.y);
+        links.circle(target.x, target.y, Math.max(7, geo.size * .66));
+    });
+    links.stroke({ color, width:Math.max(1.5, geo.size * .08), alpha:.85 });
+    pixiApp.stage.addChild(links);
 }
 
 function rememberedPeonPresentations(selected) {
@@ -625,11 +653,27 @@ function animateLevelUp(event) {
 
 function renderSelection() {
     const house = state.world?.houses?.[state.selectedHouseId];
-    $('#mentalMapToggle').disabled = Boolean(house);
-    $('#inspectorTitle').textContent = house ? 'MAISON SÉLECTIONNÉE' : 'PEON SÉLECTIONNÉ';
+    const granary = state.world?.granaries?.[state.selectedGranaryId];
+    $('#mentalMapToggle').disabled = Boolean(house || granary);
+    $('#inspectorTitle').textContent = granary ? 'GRENIER SÉLECTIONNÉ' : house ? 'MAISON SÉLECTIONNÉE' : 'PEON SÉLECTIONNÉ';
     $('#houseDetails').hidden = !house;
+    $('#granaryDetails').hidden = !granary;
+    if (granary) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderGranary(granary); return; }
     if (house) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderHouse(house); return; }
     renderPeon();
+}
+
+function renderGranary(granary) {
+    const team = state.world.teams?.[granary.teamId];
+    const fields = linkedFields(granary);
+    const capacity = state.defaults?.granaryCapacity ?? 50;
+    $('#granaryTeam').textContent = team?.name || 'Équipe inconnue';
+    $('#granaryTeam').style.color = team?.color || '';
+    $('#granaryPosition').textContent = `${granary.position.q}, ${granary.position.r}`;
+    $('#granaryStock').textContent = `${granary.wheatQuantity}/${capacity}`;
+    $('#granaryFieldCount').textContent = fields.length;
+    $('#granaryFields').innerHTML = fields.length ? fields.map(field => `<div class="granary-field"><span>Champ (${field.position.q}, ${field.position.r})</span><strong>${field.wheatQuantity > 0 ? `${field.wheatQuantity} blé(s) prêt(s)` : `croissance · tour ${field.readyAtRound}`}</strong></div>`).join('') : '<p class="muted">Aucun champ allié dans le rayon de 4 cases.</p>';
+    $('#granaryId').textContent = granary.id;
 }
 
 function renderHouse(house) {
@@ -699,7 +743,7 @@ function renderEvents() {
 
 function visibleEvents() { return state.events.filter(event => event.sequenceNumber <= (state.world?.sequenceNumber ?? 0)); }
 function peonName(peonId) { return peonId ? state.world?.peons?.[peonId]?.firstName || state.liveWorld?.peons?.[peonId]?.firstName || `Peon ${peonId.slice(0, 8)}` : null; }
-function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger des baies', MANGER_MOUTON:'Manger un mouton', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
+function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger des baies', MANGER_MOUTON:'Manger un mouton', MANGER_BLE:'Manger du blé', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', CONSTRUIRE_CHAMP:'Construire un champ', CONSTRUIRE_GRENIER:'Construire un grenier', RECOLTER:'Récolter le blé', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
 function friendlyPurpose(purpose) { return ({ SURVIVRE:'survivre', GAGNER_DES_NIVEAUX:'gagner des niveaux', AIDER_LES_ALLIES:'aider les autres peons' })[purpose] || purpose?.replaceAll('_', ' ').toLowerCase(); }
 function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', NO_WOOD_BUNDLE:'aucun fagot de bois sur la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
 function coordinate(value) { return value ? `(${value.q}, ${value.r})` : ''; }
@@ -769,15 +813,16 @@ canvas.addEventListener('click', event => {
     if (!state.world || !viewport._geometry) return;
     const rect = canvas.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top;
     const selected = state.world.peons[state.selectedPeonId];
-    const mental = !state.selectedHouseId && $('#mentalMapToggle').checked && selected?.alive;
+    const mental = !state.selectedHouseId && !state.selectedGranaryId && $('#mentalMapToggle').checked && selected?.alive;
     const peonCandidates = mental
         ? [{ peon:selected, position:selected.position }, ...rememberedPeonPresentations(selected).map(memory => ({ peon:state.world.peons[memory.peonId], position:memory.position })).filter(candidate => candidate.peon), ...rememberedGravePresentations(selected, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point })).filter(candidate => candidate.peon)]
         : [...Object.values(state.world.peons).filter(peon => peon.alive && !peon.insideHouseId).map(peon => ({ peon, position:peon.position })), ...gravePresentations(state.world, viewport._geometry).map(({ grave, point }) => ({ peon:state.world.peons[grave.peonId], point }))];
     const houseCandidates = Object.values(state.world.houses || {}).filter(house => !mental || selected?.mentalMap?.[`${house.position.q}:${house.position.r}`]).map(house => ({ house, position:house.position }));
-    const candidates = [...peonCandidates.map(candidate => ({ ...candidate, kind:'peon' })), ...houseCandidates.map(candidate => ({ ...candidate, kind:'house' }))];
+    const granaryCandidates = Object.values(state.world.granaries || {}).filter(granary => !mental || selected?.mentalMap?.[`${granary.position.q}:${granary.position.r}`]).map(granary => ({ granary, position:granary.position }));
+    const candidates = [...granaryCandidates.map(candidate => ({ ...candidate, kind:'granary' })), ...houseCandidates.map(candidate => ({ ...candidate, kind:'house' })), ...peonCandidates.map(candidate => ({ ...candidate, kind:'peon' }))];
     const nearest = candidates.map(candidate => ({ ...candidate, point:candidate.point || centerOf(candidate.position, viewport._geometry) })).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
     if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) {
-        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; $('#mentalMapToggle').checked = false; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; }
+        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; state.selectedGranaryId = null; $('#mentalMapToggle').checked = false; } else if (nearest.kind === 'granary') { state.selectedGranaryId = nearest.granary.id; state.selectedHouseId = null; $('#mentalMapToggle').checked = false; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; state.selectedGranaryId = null; }
         render();
     }
 });
@@ -785,7 +830,7 @@ canvas.addEventListener('click', event => {
 $('#houseOccupants').addEventListener('click', event => {
     const button = event.target.closest('[data-peon-id]');
     if (!button) return;
-    state.selectedPeonId = button.dataset.peonId; state.selectedHouseId = null; render();
+    state.selectedPeonId = button.dataset.peonId; state.selectedHouseId = null; state.selectedGranaryId = null; render();
 });
 
 canvas.addEventListener('pointerdown', event => { state.dragging = true; state.dragMoved = false; state.dragStart = { x:event.clientX, y:event.clientY, panX:state.panX, panY:state.panY }; canvas.classList.add('dragging'); canvas.setPointerCapture(event.pointerId); });

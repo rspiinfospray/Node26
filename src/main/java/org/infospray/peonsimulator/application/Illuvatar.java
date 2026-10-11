@@ -368,7 +368,9 @@ public class Illuvatar {
         List<PeonDecisionContext.ObservedField> knownFields = world.getWheatFields().values().stream().filter(value -> knownCoordinates.contains(World.key(value.getPosition()))).map(value -> new PeonDecisionContext.ObservedField(value.getId(), value.getTeamId(), value.getPosition(), value.getWheatQuantity())).toList();
         List<PeonDecisionContext.ObservedGranary> knownGranaries = world.getGranaries().values().stream().filter(value -> knownCoordinates.contains(World.key(value.getPosition()))).map(value -> new PeonDecisionContext.ObservedGranary(value.getId(), value.getTeamId(), value.getPosition(), value.getWheatQuantity())).toList();
         boolean sameTeamHouseNearby = world.getHouses().values().stream().filter(candidate -> candidate.getPosition().distanceTo(peon.getPosition()) >= 1 && candidate.getPosition().distanceTo(peon.getPosition()) <= 2).flatMap(candidate -> candidate.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(peon.getTeamId()));
-        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable, buildable && sameTeamHouseNearby);
+        boolean alliedGranaryNearFieldSite = world.hasAlliedGranaryWithin(peon.getPosition(), peon.getTeamId(), this.defaults.getFieldGranaryRadius());
+        int livingTeamPeonCount = (int) world.alivePeons().stream().filter(ally -> ally.getTeamId().equals(peon.getTeamId())).count();
+        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable && alliedGranaryNearFieldSite, buildable && sameTeamHouseNearby, livingTeamPeonCount);
     }
 
     private void resolveAction(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -540,10 +542,12 @@ public class Illuvatar {
 
     private void buildField(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (!this.isFreeConstructionSite(world, actor)) { this.reject(world, actor, request, events, index, "INVALID_FIELD_SITE"); return; }
+        Granary attachedGranary = world.closestAlliedGranaryWithin(actor.getPosition(), actor.getTeamId(), this.defaults.getFieldGranaryRadius());
+        if (attachedGranary == null) { this.reject(world, actor, request, events, index, "NO_ALLIED_GRANARY_IN_RANGE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForField())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
-        WheatField field = new WheatField(UUID.randomUUID(), actor.getPosition(), actor.getTeamId(), world.getCurrentRound() + this.defaults.getFieldGrowthRounds());
+        WheatField field = new WheatField(UUID.randomUUID(), actor.getPosition(), actor.getTeamId(), attachedGranary.getId(), world.getCurrentRound() + this.defaults.getFieldGrowthRounds());
         world.getWheatFields().put(field.getId(), field);
-        events.add(this.event(world, request, actor, "FIELD_BUILT", index, Map.of("fieldId", field.getId(), "position", field.getPosition(), "readyAtRound", field.getReadyAtRound())));
+        events.add(this.event(world, request, actor, "FIELD_BUILT", index, Map.of("fieldId", field.getId(), "granaryId", attachedGranary.getId(), "position", field.getPosition(), "readyAtRound", field.getReadyAtRound())));
         this.gainExperience(world, actor, request, events, index, this.defaults.getBuildFieldExperienceGain());
     }
 
@@ -561,7 +565,8 @@ public class Illuvatar {
     private void harvest(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         WheatField field = world.wheatFieldAt(actor.getPosition());
         if (field == null || !field.getTeamId().equals(actor.getTeamId()) || !field.isReady()) { this.reject(world, actor, request, events, index, "NO_RIPE_ALLIED_FIELD"); return; }
-        Granary granary = world.getGranaries().values().stream().filter(candidate -> candidate.getTeamId().equals(actor.getTeamId())).filter(candidate -> candidate.getWheatQuantity() < this.defaults.getGranaryCapacity()).min(Comparator.comparingInt(candidate -> candidate.getPosition().distanceTo(actor.getPosition()))).orElse(null);
+        Granary attachedGranary = field.getGranaryId() == null ? null : world.getGranaries().get(field.getGranaryId());
+        Granary granary = attachedGranary != null && attachedGranary.getTeamId().equals(actor.getTeamId()) && attachedGranary.getWheatQuantity() < this.defaults.getGranaryCapacity() ? attachedGranary : world.getGranaries().values().stream().filter(candidate -> candidate.getTeamId().equals(actor.getTeamId())).filter(candidate -> candidate.getWheatQuantity() < this.defaults.getGranaryCapacity()).min(Comparator.comparingInt(candidate -> candidate.getPosition().distanceTo(actor.getPosition()))).orElse(null);
         if (granary == null) { this.reject(world, actor, request, events, index, "NO_AVAILABLE_ALLIED_GRANARY"); return; }
         int harvested = field.harvest(this.defaults.getGranaryCapacity() - granary.getWheatQuantity(), world.getCurrentRound(), this.defaults.getFieldGrowthRounds());
         granary.store(harvested, this.defaults.getGranaryCapacity());

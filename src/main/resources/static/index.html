@@ -63,7 +63,7 @@
     <aside class="side-panel">
         <section class="panel inspector">
             <p id="inspectorTitle" class="section-label">PEON SÉLECTIONNÉ</p>
-            <div id="peonEmpty" class="muted">Cliquez sur un peon ou une maison pour l’inspecter.</div>
+            <div id="peonEmpty" class="muted">Cliquez sur un peon, une maison ou un grenier pour l’inspecter.</div>
             <div id="peonDetails" hidden>
                 <div class="identity"><div id="peonAvatar" class="avatar"></div><div><h2 id="peonName"></h2><p id="peonTeam"></p></div></div>
                 <div class="meter-row"><span>PV</span><div class="meter"><i id="healthBar"></i></div><strong id="healthValue"></strong></div>
@@ -86,6 +86,12 @@
                 <dl><div><dt>Position</dt><dd id="housePosition"></dd></div><div><dt>Propriétaires</dt><dd id="houseHost"></dd></div><div><dt>Occupants</dt><dd id="houseOccupantCount"></dd></div></dl>
                 <div class="peon-actions"><div class="section-heading"><p class="section-label">À L’INTÉRIEUR</p></div><div id="houseOccupants" class="house-occupants"></div></div>
                 <code id="houseId"></code>
+            </div>
+            <div id="granaryDetails" hidden>
+                <div class="identity"><div class="avatar granary-avatar"></div><div><h2>Grenier</h2><p id="granaryTeam"></p></div></div>
+                <dl><div><dt>Position</dt><dd id="granaryPosition"></dd></div><div><dt>Stock de blé</dt><dd id="granaryStock"></dd></div><div><dt>Champs rattachés</dt><dd id="granaryFieldCount"></dd></div></dl>
+                <div class="peon-actions"><div class="section-heading"><p class="section-label">EXPLOITATION · RAYON 4</p></div><div id="granaryFields" class="granary-fields"></div></div>
+                <code id="granaryId"></code>
             </div>
             <button id="openWorldJournalButton" class="button journal-button" type="button">Ouvrir le journal du monde <span id="eventCount">0</span></button>
         </section>

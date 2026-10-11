@@ -613,9 +613,11 @@ En production, le scheduler doit être séparé logiquement des instances d'API,
 ## 15. Agriculture et propriété des maisons
 
 - Une maison conserve ses propriétaires lorsqu'elle est vide. Un allié invité devient copropriétaire ; chaque propriété individuelle prend fin à la mort du peon. La maison ne redevient réclamable que lorsque tous ses propriétaires sont morts.
-- Un champ coûte 50 bois, pousse en 8 tours puis produit 5 unités de blé renouvelables.
+- Un champ coûte 50 bois, pousse en 8 tours puis produit 5 unités de blé renouvelables. Sa construction exige un grenier de la même équipe à une distance hexagonale maximale de 4 cases.
 - Un grenier coûte 100 bois, appartient à une équipe et doit être construit sur une plaine libre à une distance hexagonale de 1 ou 2 d'une maison possédée par un peon vivant de la même équipe. Sa capacité est de 50 unités.
 - La récolte transfère le blé vers le grenier allié disponible le plus proche. Un peon doit se trouver sur un grenier allié pour consommer une unité de blé, gagner 40 PV et 15 XP.
+- Le moteur de décision traite chaque grenier comme le centre d'une exploitation : il vise au minimum 3 champs, puis adapte la cible au nombre de peons vivants (`arrondi supérieur(peons / 2) + 1`). Il valorise les champs supplémentaires tant que la cible n'est pas atteinte et que le grenier n'est pas plein.
+- Chaque nouveau champ est rattaché durablement au grenier allié le plus proche dans le rayon autorisé. L'inspecteur du grenier affiche son équipe, son stock et cette exploitation, et relie visuellement le grenier à ses champs sur la carte.
 
 ## 16. Décisions à fixer avant l'implémentation métier détaillée
 

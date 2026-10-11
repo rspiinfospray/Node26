@@ -40,7 +40,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (context.field() != null && context.teamId().equals(context.field().teamId()) && context.field().wheatQuantity() > 0 && context.knownGranaries().stream().anyMatch(granary -> context.teamId().equals(granary.teamId()))) { candidates.add(this.scoreHarvest(context, situationKey)); }
         if (context.currentTerrain() == TerrainType.TREE && context.treeHealthPoints() > 0) { candidates.add(this.scoreChopWood(context, situationKey)); }
         if (context.buildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForHouse()) { candidates.add(this.scoreBuildHouse(context, situationKey)); }
-        if (context.fieldBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForField()) { candidates.add(this.scoreBuildField(context, situationKey)); }
+        if (context.fieldBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForField() && this.shouldExpandAgriculture(context)) { candidates.add(this.scoreBuildField(context, situationKey)); }
         if (context.granaryBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForGranary()) { candidates.add(this.scoreBuildGranary(context, situationKey)); }
         if (context.woodBundleQuantity() > 0) { candidates.add(this.scoreLoot(context, situationKey)); }
         context.peonsOnCurrentCell().stream().filter(peon -> !peon.teamId().equals(context.teamId())).forEach(enemy -> candidates.add(this.scoreAttack(context, enemy, situationKey)));
@@ -114,11 +114,32 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
 
     private WeightedAction scoreBuildField(PeonDecisionContext context, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
+        PeonDecisionContext.ObservedGranary granary = this.closestAlliedGranaryForFieldSite(context);
+        int nearbyFieldCount = this.fieldsAround(context, granary).size();
+        int targetFieldCount = this.targetFieldCount(context);
+        int missingFields = Math.max(0, targetFieldCount - nearbyFieldCount);
+        int freeCapacity = this.defaults.getGranaryCapacity() - granary.wheatQuantity();
         factors.put("production renouvelable", 38.0);
+        factors.put("multiplication des champs", missingFields * 18.0);
+        factors.put("besoins de l'équipe", context.livingTeamPeonCount() * 4.0);
+        factors.put("capacité disponible du grenier", freeCapacity * 0.45);
+        if (nearbyFieldCount > 0) { factors.put("exploitation agricole déjà établie", nearbyFieldCount * 5.0); }
         factors.put("ingéniosité", context.personality().getIngenuity() * 0.35);
         this.addLearning(context, situationKey, ActionType.CONSTRUIRE_CHAMP, factors);
         return this.weighted(new PeonAction(ActionType.CONSTRUIRE_CHAMP, null, null, PeonPurpose.SURVIVRE, ""), factors);
     }
+
+    private boolean shouldExpandAgriculture(PeonDecisionContext context) {
+        PeonDecisionContext.ObservedGranary granary = this.closestAlliedGranaryForFieldSite(context);
+        if (granary == null || granary.wheatQuantity() >= this.defaults.getGranaryCapacity()) { return false; }
+        return this.fieldsAround(context, granary).size() < this.targetFieldCount(context);
+    }
+
+    private PeonDecisionContext.ObservedGranary closestAlliedGranaryForFieldSite(PeonDecisionContext context) { return context.knownGranaries().stream().filter(granary -> context.teamId().equals(granary.teamId()) && granary.position().distanceTo(context.position()) <= this.defaults.getFieldGranaryRadius()).min(Comparator.comparingInt(granary -> granary.position().distanceTo(context.position()))).orElse(null); }
+
+    private List<PeonDecisionContext.ObservedField> fieldsAround(PeonDecisionContext context, PeonDecisionContext.ObservedGranary granary) { return granary == null ? List.of() : context.knownFields().stream().filter(field -> context.teamId().equals(field.teamId()) && field.position().distanceTo(granary.position()) <= this.defaults.getFieldGranaryRadius()).toList(); }
+
+    private int targetFieldCount(PeonDecisionContext context) { return Math.max(3, (int) Math.ceil(context.livingTeamPeonCount() / 2.0) + 1); }
 
     private WeightedAction scoreBuildGranary(PeonDecisionContext context, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();

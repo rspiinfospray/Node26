@@ -23,6 +23,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RuleBasedPeonDecisionProviderTest {
     @Test
+    void shouldMultiplyFieldsAroundGranaryUntilTeamProductionTargetIsReached() {
+        PeonDecisionContext expandable = this.agricultureContext(1, 5);
+        PeonDecision expandableDecision = this.provider.decide(expandable);
+        PeonDecision.CandidateScore fieldCandidate = expandableDecision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.CONSTRUIRE_CHAMP).findFirst().orElseThrow();
+        assertThat(fieldCandidate.factors()).containsKeys("multiplication des champs", "besoins de l'équipe", "capacité disponible du grenier", "exploitation agricole déjà établie");
+
+        PeonDecisionContext sufficientProduction = this.agricultureContext(4, 5);
+        PeonDecision sufficientDecision = this.provider.decide(sufficientProduction);
+        assertThat(sufficientDecision.candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.CONSTRUIRE_CHAMP);
+    }
+
+    @Test
     void shouldPreferMoreNutritiousSheepToBerriesWhenBothAreAvailable() {
         PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 20, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), Map.of(), Map.of(), List.of(), 1, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 1, List.of(new HexCoordinate(2, 2)));
 
@@ -191,6 +203,14 @@ class RuleBasedPeonDecisionProviderTest {
 
     private PeonDecisionContext context(int health, boolean concealed, Map<String, ActionKnowledge> learning, Map<String, RememberedCell> mentalMap, List<PeonDecisionContext.ObservedPeon> occupants, int food, List<HexCoordinate> neighbors) {
         return new PeonDecisionContext(UUID.fromString("00000000-0000-0000-0000-000000000001"), UUID.randomUUID(), health, 100, 0, 1, new HexCoordinate(2, 2), concealed, 10, 42, new PeonPersonality(50, 50, 50, 50), learning, mentalMap, occupants, food, neighbors, 10, 9);
+    }
+
+    private PeonDecisionContext agricultureContext(int fieldCount, int storedWheat) {
+        UUID teamId = UUID.randomUUID();
+        HexCoordinate position = new HexCoordinate(2, 2);
+        PeonDecisionContext.ObservedGranary granary = new PeonDecisionContext.ObservedGranary(UUID.randomUUID(), teamId, new HexCoordinate(3, 2), storedWheat);
+        List<PeonDecisionContext.ObservedField> fields = java.util.stream.IntStream.range(0, fieldCount).mapToObj(index -> new PeonDecisionContext.ObservedField(UUID.randomUUID(), teamId, new HexCoordinate(3 + index, 3), 0)).toList();
+        return new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, position, false, 10, 42, new PeonPersonality(50, 50, 50, 70), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 200, 0, true, null, List.of(), 0, 0, 0, List.of(), null, null, fields, List.of(granary), true, false, 6);
     }
 
     private GameDefaultsProperties defaults() {

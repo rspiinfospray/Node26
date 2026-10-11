@@ -107,6 +107,8 @@ public class World {
     public House houseAt(HexCoordinate coordinate) { return this.houses.values().stream().filter(house -> house.getPosition().equals(coordinate)).findFirst().orElse(null); }
     public WheatField wheatFieldAt(HexCoordinate coordinate) { return this.wheatFields.values().stream().filter(field -> field.getPosition().equals(coordinate)).findFirst().orElse(null); }
     public Granary granaryAt(HexCoordinate coordinate) { return this.granaries.values().stream().filter(granary -> granary.getPosition().equals(coordinate)).findFirst().orElse(null); }
+    public boolean hasAlliedGranaryWithin(HexCoordinate coordinate, UUID teamId, int maximumDistance) { return this.granaries.values().stream().anyMatch(granary -> granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance); }
+    public Granary closestAlliedGranaryWithin(HexCoordinate coordinate, UUID teamId, int maximumDistance) { return this.granaries.values().stream().filter(granary -> granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance).min(java.util.Comparator.comparingInt(granary -> granary.getPosition().distanceTo(coordinate))).orElse(null); }
 
     public Cell cell(HexCoordinate coordinate) { return this.cells.get(key(coordinate)); }
     public boolean contains(HexCoordinate coordinate) { return this.cells.containsKey(key(coordinate)); }
