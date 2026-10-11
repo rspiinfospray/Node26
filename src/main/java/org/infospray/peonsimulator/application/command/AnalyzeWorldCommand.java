@@ -73,6 +73,11 @@ public class AnalyzeWorldCommand {
         long meals = actions.getOrDefault("MANGER", 0L);
         long attacks = actions.getOrDefault("ATTAQUER", 0L);
         long communications = actions.getOrDefault("COMMUNIQUER", 0L);
+        if (totalActions > 0) {
+            Map.Entry<String, Long> mostFrequentAction = actions.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow();
+            long percentage = Math.round(mostFrequentAction.getValue() * 100.0 / totalActions);
+            trends.add("L’action la plus fréquente est " + mostFrequentAction.getKey() + " (" + mostFrequentAction.getValue() + " décisions, " + percentage + " % du total).");
+        }
         if (totalActions == 0) trends.add("La simulation n’a encore produit aucune décision de peon.");
         if (totalActions > 0 && moves * 2 >= totalActions) trends.add("L’exploration domine : au moins une décision sur deux est un déplacement.");
         if (totalActions > 0 && meals * 4 >= totalActions) trends.add("La recherche de nourriture occupe une part importante des décisions.");
