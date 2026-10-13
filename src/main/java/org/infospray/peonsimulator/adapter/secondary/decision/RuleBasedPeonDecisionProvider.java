@@ -476,10 +476,12 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (action.type() == ActionType.MANGER_MOUTON && levelsGained == 0) { health = Math.min(context.maxHealthPoints(), health + this.defaults.getSheepHealthGain()); }
         if (action.type() == ActionType.MANGER_BLE && levelsGained == 0) { health = Math.min(context.maxHealthPoints(), health + this.defaults.getWheatHealthGain()); }
         if (action.type() == ActionType.SE_DEPLACER) { health -= this.defaults.getMoveHealthCost(); }
-        boolean shelteredAfterAction = action.type() == ActionType.CONSTRUIRE_MAISON || action.type() != ActionType.SE_DEPLACER && this.isInsideHouse(context);
+        boolean shelteredAfterAction = action.type() == ActionType.CONSTRUIRE_MAISON || action.type() == ActionType.SE_DEPLACER && this.movesIntoUnoccupiedHouse(context, action) || action.type() != ActionType.SE_DEPLACER && this.isInsideHouse(context);
         int hungerLoss = shelteredAfterAction ? (int) Math.ceil(this.defaults.getHungerHealthLossPerTurn() * this.defaults.getHouseHungerPercentage() / 100.0) : this.defaults.getHungerHealthLossPerTurn();
         return health - hungerLoss <= 0;
     }
+
+    private boolean movesIntoUnoccupiedHouse(PeonDecisionContext context, PeonAction action) { return action.destination() != null && context.knownHouses().stream().anyMatch(house -> !house.occupied() && house.position().equals(action.destination())); }
 
     private boolean isDangerous(PeonDecisionContext context, int enemyHealth, int enemyLevel) {
         double healthPercentage = this.healthPercentage(context);

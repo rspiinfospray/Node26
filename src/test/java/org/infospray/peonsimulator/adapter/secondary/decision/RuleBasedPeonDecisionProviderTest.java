@@ -210,6 +210,20 @@ class RuleBasedPeonDecisionProviderTest {
     }
 
     @Test
+    void shouldMoveIntoUnoccupiedHouseWhenReducedHungerMakesMovementSurvivable() {
+        UUID teamId = UUID.randomUUID();
+        HexCoordinate position = new HexCoordinate(2, 2);
+        HexCoordinate housePosition = new HexCoordinate(3, 2);
+        PeonDecisionContext.ObservedHouse house = new PeonDecisionContext.ObservedHouse(UUID.randomUUID(), null, null, housePosition, false, false);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 9, 100, 0, 1, position, false, 10, 42, new PeonPersonality(90, 10, 10, 50), Map.of(), Map.of(), List.of(), 0, List.of(housePosition), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(house), 0, 0);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.SE_DEPLACER);
+        assertThat(decision.action().destination()).isEqualTo(housePosition);
+    }
+
+    @Test
     void shouldNotExploreAnAlternativeTooFarBelowTheBestScore() {
         GameDefaultsProperties properties = new GameDefaultsProperties();
         properties.setExplorationPercentage(100);
