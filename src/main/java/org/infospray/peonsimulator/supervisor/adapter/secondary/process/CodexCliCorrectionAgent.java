@@ -27,7 +27,7 @@ public class CodexCliCorrectionAgent implements CodexCorrectionAgent {
         Path output = this.outputDirectory.resolve("codex-cycle-" + cycleNumber + ".md");
         try { Files.createDirectories(this.outputDirectory); Files.deleteIfExists(output); } catch (IOException exception) { throw new IllegalStateException("Impossible de préparer le dossier de sortie Codex", exception); }
         String escapedOutput = output.toString().replace("'", "''");
-        String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & codex.cmd exec --sandbox workspace-write --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
+        String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & codex.cmd exec --sandbox danger-full-access --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
         ProcessExecution.run(this.projectDirectory, Duration.ofMinutes(45), prompt, List.of("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script));
         try {
             if (!Files.isRegularFile(output)) { throw new IllegalStateException("Codex n'a créé aucun fichier de résultat"); }

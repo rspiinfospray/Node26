@@ -6,7 +6,7 @@ Le superviseur est un programme Java indépendant du backend. Tout son code est 
 
 1. Sélection du rapport terminé le plus récent et encore non traité.
 2. Vérification que la branche Git courante est exactement `analyse`.
-3. Exécution non interactive de `codex exec` avec le sandbox `workspace-write`.
+3. Exécution non interactive de `codex exec` avec le sandbox `danger-full-access`, nécessaire pour autoriser les modifications et les tests dans l'environnement Windows local.
 4. Vérification obligatoire d'un compte rendu Codex non vide et d'au moins une modification dans `src/main/java` ou `src/test/java`.
 5. Nouvelle vérification de la branche.
 6. Exécution de `docker compose build backend`, qui compile et lance les tests Maven.
