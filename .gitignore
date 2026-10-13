@@ -42,4 +42,3 @@ reports/
 # Secrets et configuration locale
 .env
 .env.*
-!.env.example

@@ -3,3 +3,6 @@ target
 .git
 data
 *.iml
+.env
+.env.*
+reports
