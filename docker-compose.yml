@@ -48,6 +48,11 @@ services:
       DATABASE_PASSWORD: peons
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_ENABLED: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6.1-sol}
+      WORLD_REPORTS_DIRECTORY: /app/reports
+    volumes:
+      - ./reports:/app/reports
     ports:
       - "8080:8080"
     depends_on:
