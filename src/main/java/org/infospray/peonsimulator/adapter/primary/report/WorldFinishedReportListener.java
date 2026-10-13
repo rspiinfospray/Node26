@@ -16,8 +16,9 @@ public class WorldFinishedReportListener {
     public WorldFinishedReportListener(GenerateWorldBehaviorReportCommand generateReportCommand) { this.generateReportCommand = generateReportCommand; }
 
     @Async
-    @EventListener(condition = "#root.event.eventType() == 'WORLD_FINISHED'")
+    @EventListener
     public void onWorldFinished(SimulationEvent event) {
+        if (!"WORLD_FINISHED".equals(event.eventType())) { return; }
         try { this.generateReportCommand.execute(event.worldId()); } catch (RuntimeException exception) { LOGGER.error("Échec de génération du rapport comportemental du monde {}: {}", event.worldId(), exception.getMessage()); }
     }
 }
