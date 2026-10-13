@@ -45,3 +45,5 @@ KAFKA_ENABLED=true KAFKA_BOOTSTRAP_SERVERS=localhost:9092 mvn spring-boot:run
 - `peon-simulator.domain-events.v1`
 
 Les messages sont partitionnés par `worldId`. Illuvatar déduplique chaque demande grâce à son `actionId`.
+
+<img width="1625" height="856" alt="peon" src="https://github.com/user-attachments/assets/5a42c72d-0e09-43a5-a9ee-22ae0328467c" />
