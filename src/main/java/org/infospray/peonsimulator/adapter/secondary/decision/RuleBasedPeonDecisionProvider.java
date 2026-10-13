@@ -60,7 +60,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         RememberedGraveObservation knownGrave = this.closestKnownGrave(context);
         PeonDecisionContext.ObservedHouse safeHouse = this.closestKnownSafeHouse(context);
         context.traversableNeighbors().forEach(destination -> candidates.add(this.scoreMove(context, destination, knownEnemy, survivalTarget, knownTree, knownLoot, knownField, knownGrave, safeHouse, situationKey)));
-        candidates.add(this.scoreSee(context, knownEnemy, knownGrave, situationKey));
+        if (context.currentRound() - context.lastObservationRound() > 1) { candidates.add(this.scoreSee(context, knownEnemy, knownGrave, situationKey)); }
         candidates.add(this.scoreIdle(context, knownEnemy, knownGrave, situationKey));
         candidates.sort(Comparator.comparingDouble(WeightedAction::score).reversed());
         List<WeightedAction> safeCandidates = candidates.stream().filter(candidate -> !this.isPredictablyLethal(context, candidate.action())).toList();
@@ -229,8 +229,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             int progress = context.position().distanceTo(survivalTarget.position()) - destination.distanceTo(survivalTarget.position());
             double need = (double) (context.maxHealthPoints() - context.healthPoints()) / context.maxHealthPoints();
             double urgency = this.healthPercentage(context) <= this.defaults.getSeekFoodHealthThreshold() ? 180.0 + (100.0 - this.healthPercentage(context)) : 55.0;
-            factors.put("route alimentaire prioritaire · " + survivalTarget.label(), progress * (urgency + need * survivalTarget.healthGain()));
-            if (survivalTarget.mobile()) { factors.put("incertitude d’une proie mobile", -6.0); }
+            double routeValue = progress * (urgency + need * survivalTarget.healthGain());
+            if (survivalTarget.mobile()) { routeValue *= 1.0 / (context.position().distanceTo(survivalTarget.position()) + 1.0); }
+            factors.put("route alimentaire prioritaire · " + survivalTarget.label(), Math.max(-90.0, Math.min(90.0, routeValue)));
+            if (survivalTarget.mobile()) { factors.put("incertitude d’une proie mobile", -context.position().distanceTo(survivalTarget.position()) * 8.0); }
         }
         if (tree != null && context.woodQuantity() < this.defaults.getWoodRequiredForHouse()) {
             int progress = context.position().distanceTo(tree) - destination.distanceTo(tree);
@@ -410,6 +412,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     private FoodTarget bestSurvivalTarget(PeonDecisionContext context, HexCoordinate food, HexCoordinate sheep, HexCoordinate granary) {
         List<FoodTarget> targets = new ArrayList<>();
         if (context.foodOnCurrentCell() > 0) { targets.add(new FoodTarget(context.position(), this.defaults.getEatHealthGain(), "baies", false, 1)); }
+        if (context.sheepOnCurrentCell() > 0) { targets.add(new FoodTarget(context.position(), this.defaults.getSheepHealthGain(), "mouton accessible", false, 0)); }
         if (food != null) { targets.add(new FoodTarget(food, this.defaults.getEatHealthGain(), "baies", false, 1)); }
         if (granary != null) { targets.add(new FoodTarget(granary, this.defaults.getWheatHealthGain(), "grenier", false, 0)); }
         if (sheep != null) { targets.add(new FoodTarget(sheep, this.defaults.getSheepHealthGain(), "mouton", true, 2)); }
@@ -464,9 +467,9 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     }
 
     private boolean canCommunicate(PeonDecisionContext context) {
-        boolean allyPresent = context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId()));
+        boolean allyPresentWithUsefulInformation = context.usefulCommunicationCount() > 0 && context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId()));
         boolean alliedHostCanAnswer = context.house() != null && context.house().hostPeonId() != null && !context.house().hostPeonId().equals(context.peonId()) && context.teamId().equals(context.house().hostTeamId());
-        return allyPresent || alliedHostCanAnswer;
+        return allyPresentWithUsefulInformation || alliedHostCanAnswer;
     }
 
     private boolean isPredictablyLethal(PeonDecisionContext context, PeonAction action) {
@@ -493,8 +496,20 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (action.type() == ActionType.SE_DEPLACER) { health -= this.defaults.getMoveHealthCost(); }
         boolean shelteredAfterAction = action.type() == ActionType.CONSTRUIRE_MAISON || action.type() == ActionType.SE_DEPLACER && this.movesIntoUnoccupiedHouse(context, action) || action.type() != ActionType.SE_DEPLACER && this.isInsideHouse(context);
         int hungerLoss = shelteredAfterAction ? (int) Math.ceil(this.defaults.getHungerHealthLossPerTurn() * this.defaults.getHouseHungerPercentage() / 100.0) : this.defaults.getHungerHealthLossPerTurn();
-        return health - hungerLoss <= 0;
+        return health - hungerLoss - this.predictableEnemyDamage(context, action) <= 0;
     }
+
+    private int predictableEnemyDamage(PeonDecisionContext context, PeonAction action) {
+        if (action.type() == ActionType.SE_DEPLACER && action.destination() != null) {
+            RememberedCell destination = context.mentalMap().get(action.destination().q() + ":" + action.destination().r());
+            return destination == null ? 0 : destination.getRememberedPeons().stream().filter(enemy -> enemy.relation() == PeonRelation.ENEMY).mapToInt(enemy -> this.enemyDamage(enemy.level())).max().orElse(0);
+        }
+        return context.peonsOnCurrentCell().stream().filter(enemy -> !enemy.teamId().equals(context.teamId())).filter(enemy -> action.type() != ActionType.ATTAQUER || !enemy.id().equals(action.targetPeonId()) || this.estimatedAttackDamage(context) < enemy.healthPoints()).mapToInt(enemy -> this.enemyDamage(enemy.level())).max().orElse(0);
+    }
+
+    private int estimatedAttackDamage(PeonDecisionContext context) { return this.defaults.getAttackDamage() + Math.max(0, context.level() - 1) * this.defaults.getAttackDamageGainPerLevel(); }
+
+    private int enemyDamage(int enemyLevel) { return this.defaults.getAttackDamage() + Math.max(0, enemyLevel - 1) * this.defaults.getAttackDamageGainPerLevel(); }
 
     private boolean movesIntoUnoccupiedHouse(PeonDecisionContext context, PeonAction action) { return action.destination() != null && context.knownHouses().stream().anyMatch(house -> !house.occupied() && house.position().equals(action.destination())); }
 

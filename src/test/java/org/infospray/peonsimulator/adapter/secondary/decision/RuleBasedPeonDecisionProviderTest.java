@@ -27,6 +27,50 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RuleBasedPeonDecisionProviderTest {
     @Test
+    void shouldEscapeInsteadOfAttackingWhenEnemyRetaliationWouldBeLethal() {
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedPeon enemy = new PeonDecisionContext.ObservedPeon(UUID.randomUUID(), UUID.randomUUID(), 100, 3);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 45, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(10, 100, 10, 10), Map.of(), Map.of(), List.of(enemy), 0, List.of(new HexCoordinate(1, 2)), 10, 9);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.SE_DEPLACER);
+    }
+
+    @Test
+    void shouldNotEnterACellWhereRememberedEnemyDamageWouldBeLethal() {
+        UUID teamId = UUID.randomUUID();
+        HexCoordinate dangerousPosition = new HexCoordinate(3, 2);
+        RememberedPeonObservation enemy = new RememberedPeonObservation(UUID.randomUUID(), UUID.randomUUID(), PeonRelation.ENEMY, dangerousPosition, 100, 3, 9);
+        RememberedCell dangerousCell = new RememberedCell(new Cell(dangerousPosition, TerrainType.PLAIN, 0), false, 9, List.of(enemy));
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 45, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(10, 100, 100, 10), Map.of(), Map.of("3:2", dangerousCell), List.of(), 0, List.of(dangerousPosition), 10, 9);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isNotEqualTo(ActionType.SE_DEPLACER);
+    }
+
+    @Test
+    void shouldEatAccessibleSheepInsteadOfFollowingAnUncertainTrailAtLowHealth() {
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 30, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(10, 10, 100, 10), Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2)), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 1, List.of());
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.MANGER_MOUTON);
+    }
+
+    @Test
+    void shouldNotOfferRepeatedActionsWithoutNewInformation() {
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedPeon ally = new PeonDecisionContext.ObservedPeon(UUID.randomUUID(), teamId, 100, 1);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(10, 10, 100, 100), Map.of(), Map.of(), List.of(ally), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 3);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.COMMUNIQUER, ActionType.VOIR);
+    }
+
+    @Test
     void shouldMultiplyFieldsAroundGranaryUntilTeamProductionTargetIsReached() {
         PeonDecisionContext expandable = this.agricultureContext(1, 5);
         PeonDecision expandableDecision = this.provider.decide(expandable);
@@ -126,7 +170,7 @@ class RuleBasedPeonDecisionProviderTest {
     void shouldEatWhenSurvivalUtilityIsHighest() {
         PeonDecision decision = this.provider.decide(this.context(35, false, Map.of(), Map.of(), List.of(), 2, List.of(new HexCoordinate(3, 2))));
         assertThat(decision.action().type()).isEqualTo(ActionType.MANGER);
-        assertThat(decision.candidates()).extracting(PeonDecision.CandidateScore::actionType).contains(ActionType.MANGER, ActionType.SE_DEPLACER, ActionType.VOIR, ActionType.NE_RIEN_FAIRE);
+        assertThat(decision.candidates()).extracting(PeonDecision.CandidateScore::actionType).contains(ActionType.MANGER, ActionType.SE_DEPLACER, ActionType.NE_RIEN_FAIRE).doesNotContain(ActionType.VOIR);
     }
 
     @Test
@@ -177,7 +221,7 @@ class RuleBasedPeonDecisionProviderTest {
         PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 80, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 90, 50), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9);
         PeonDecision decision = this.provider.decide(context);
         assertThat(decision.action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
-        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.VOIR).findFirst().orElseThrow().factors()).containsEntry("perception encore fraîche", -60.0);
+        assertThat(decision.candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.VOIR);
     }
 
     @Test

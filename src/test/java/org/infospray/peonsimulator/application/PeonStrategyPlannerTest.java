@@ -50,6 +50,18 @@ class PeonStrategyPlannerTest {
     }
 
     @Test
+    void shouldRenewCommitmentWhenAnExpiredStrategyIsSelectedAgain() {
+        Fixture fixture = this.agriculturalFixture();
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+        fixture.world().setCurrentRound(11);
+
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+
+        assertThat(fixture.peon().getLongTermStrategy().getCommitmentUntilRound()).isEqualTo(21);
+        assertThat(fixture.peon().getLongTermStrategy().getLastEvaluatedAtRound()).isEqualTo(11);
+    }
+
+    @Test
     void shouldDiversifyStrategyWhenAgricultureIsAlreadyCovered() {
         Fixture fixture = this.agriculturalFixture();
         Peon agriculturalAlly = new Peon(UUID.randomUUID(), "Borin", fixture.peon().getTeamId(), new HexCoordinate(3, 0));

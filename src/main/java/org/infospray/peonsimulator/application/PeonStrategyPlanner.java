@@ -34,6 +34,8 @@ public class PeonStrategyPlanner {
                 current = new LongTermStrategy(selected, world.getCurrentRound(), peon.getTeamId());
                 current.setCommitmentUntilRound(world.getCurrentRound() + COMMITMENT_ROUNDS);
                 peon.setLongTermStrategy(current);
+            } else if (world.getCurrentRound() >= current.getCommitmentUntilRound()) {
+                current.setCommitmentUntilRound(world.getCurrentRound() + COMMITMENT_ROUNDS);
             }
             current.setExpectedValue(this.strategyScores(peon, situation, world.getCurrentRound()).get(selected));
             current.setLastEvaluatedAtRound(world.getCurrentRound());
@@ -98,7 +100,6 @@ public class PeonStrategyPlanner {
     }
 
     private void updateProgress(LongTermStrategy strategy, StrategicSituation situation, Peon peon, GameDefaultsProperties defaults) {
-        strategy.setStatus(StrategyStatus.EN_COURS);
         switch (strategy.getType()) {
             case AUTONOMIE_ALIMENTAIRE -> this.updateFoodStrategy(strategy, situation, peon, defaults);
             case CONSTRUIRE_UN_FOYER -> this.updateHomeStrategy(strategy, situation, peon, defaults);
@@ -121,6 +122,7 @@ public class PeonStrategyPlanner {
         objectives.put("champs", fields.size()); objectives.put("champsCible", situation.targetFields());
         objectives.put("bleStocke", storedWheat); objectives.put("reserveCible", situation.safetyStock());
         strategy.setObjectives(objectives);
+        strategy.setStatus(StrategyStatus.EN_COURS);
         if (house == null) { strategy.setPhase(StrategicPhase.ETABLIR_UN_FOYER); strategy.setTacticalObjective("Établir une maison alliée"); strategy.setNextPriority(peon.itemCount(org.infospray.peonsimulator.domain.model.ItemType.WOOD) >= defaults.getWoodRequiredForHouse() ? "Trouver une plaine pour construire la maison" : "Récolter du bois pour construire une maison"); strategy.setProgress(5); return; }
         if (granary == null) { strategy.setPhase(StrategicPhase.CONSTRUIRE_UN_GRENIER); strategy.setTacticalObjective("Construire un grenier près de la maison"); strategy.setNextPriority(peon.itemCount(org.infospray.peonsimulator.domain.model.ItemType.WOOD) >= defaults.getWoodRequiredForGranary() ? "Trouver une plaine à 1 ou 2 cases de la maison" : "Récolter du bois pour le grenier"); strategy.setProgress(20); return; }
         if (fields.isEmpty()) { strategy.setPhase(StrategicPhase.CREER_UN_PREMIER_CHAMP); strategy.setTacticalObjective("Créer le premier champ de l'exploitation"); strategy.setNextPriority("Construire un champ à 4 cases maximum du grenier"); strategy.setProgress(35); return; }
@@ -132,12 +134,14 @@ public class PeonStrategyPlanner {
     private void updateHomeStrategy(LongTermStrategy strategy, StrategicSituation situation, Peon peon, GameDefaultsProperties defaults) {
         boolean ownsHouse = situation.houses().stream().anyMatch(house -> house.isOwner(peon.getId()));
         strategy.setObjectives(Map.of("maisons", situation.houses().size(), "maisonsCible", 1, "bois", peon.itemCount(org.infospray.peonsimulator.domain.model.ItemType.WOOD), "boisMaison", defaults.getWoodRequiredForHouse()));
+        strategy.setStatus(StrategyStatus.EN_COURS);
         if (ownsHouse) { strategy.setPhase(StrategicPhase.DEVELOPPER_LE_VILLAGE); strategy.setTacticalObjective("Développer et partager le foyer"); strategy.setNextPriority("Inviter des alliés et soutenir les constructions collectives"); strategy.setProgress(100); strategy.setStatus(StrategyStatus.ACCOMPLIE); return; }
         if (peon.itemCount(org.infospray.peonsimulator.domain.model.ItemType.WOOD) < defaults.getWoodRequiredForHouse()) { strategy.setPhase(StrategicPhase.RASSEMBLER_DU_BOIS); strategy.setTacticalObjective("Rassembler " + defaults.getWoodRequiredForHouse() + " bois"); strategy.setNextPriority("Rejoindre un arbre ou récupérer un fagot"); strategy.setProgress(peon.itemCount(org.infospray.peonsimulator.domain.model.ItemType.WOOD) * 70.0 / defaults.getWoodRequiredForHouse()); return; }
         strategy.setPhase(StrategicPhase.CONSTRUIRE_L_ABRI); strategy.setTacticalObjective("Construire une maison"); strategy.setNextPriority("Trouver une plaine libre"); strategy.setProgress(75);
     }
 
     private void updateExploreStrategy(LongTermStrategy strategy, StrategicSituation situation, Peon peon) {
+        strategy.setStatus(StrategyStatus.EN_COURS);
         strategy.setObjectives(Map.of("exploration", (int) Math.round(situation.exploredPercentage()), "explorationCible", 80));
         strategy.setPhase(situation.exploredPercentage() < 40 ? StrategicPhase.REJOINDRE_LA_FRONTIERE : StrategicPhase.CARTOGRAPHIER_LA_REGION);
         strategy.setTacticalObjective("Cartographier les zones inconnues");
@@ -148,6 +152,7 @@ public class PeonStrategyPlanner {
     }
 
     private void updateProtectStrategy(LongTermStrategy strategy, StrategicSituation situation, Peon peon) {
+        strategy.setStatus(StrategyStatus.EN_COURS);
         strategy.setObjectives(Map.of("menacesConnues", (int) situation.knownEnemies(), "alliesVivants", situation.aliveAllies()));
         strategy.setPhase(situation.knownEnemies() > 0 ? StrategicPhase.REJOINDRE_LA_MENACE : StrategicPhase.PATROUILLER);
         strategy.setTacticalObjective(situation.knownEnemies() > 0 ? "Neutraliser ou éloigner les menaces connues" : "Patrouiller autour du territoire allié");
