@@ -1,5 +1,6 @@
 package org.infospray.peonsimulator.supervisor.adapter.secondary.process;
 
+import org.infospray.peonsimulator.supervisor.application.CodexCorrectionResult;
 import org.infospray.peonsimulator.supervisor.application.port.secondary.CodexCorrectionAgent;
 
 import java.io.IOException;
@@ -21,13 +22,17 @@ public class CodexCliCorrectionAgent implements CodexCorrectionAgent {
     }
 
     @Override
-    public void apply(Path report, int cycleNumber) {
+    public CodexCorrectionResult apply(Path report, int cycleNumber) {
         String prompt = this.buildPrompt(report, cycleNumber);
         Path output = this.outputDirectory.resolve("codex-cycle-" + cycleNumber + ".md");
-        try { Files.createDirectories(this.outputDirectory); } catch (IOException exception) { throw new IllegalStateException("Impossible de créer le dossier de sortie Codex", exception); }
+        try { Files.createDirectories(this.outputDirectory); Files.deleteIfExists(output); } catch (IOException exception) { throw new IllegalStateException("Impossible de préparer le dossier de sortie Codex", exception); }
         String escapedOutput = output.toString().replace("'", "''");
-        String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & codex exec --sandbox workspace-write --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
+        String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & codex.cmd exec --sandbox workspace-write --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
         ProcessExecution.run(this.projectDirectory, Duration.ofMinutes(45), prompt, List.of("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script));
+        try {
+            if (!Files.isRegularFile(output)) { throw new IllegalStateException("Codex n'a créé aucun fichier de résultat"); }
+            return new CodexCorrectionResult(Files.readString(output, StandardCharsets.UTF_8));
+        } catch (IOException exception) { throw new IllegalStateException("Impossible de lire le résultat Codex", exception); }
     }
 
     private String buildPrompt(Path report, int cycleNumber) {

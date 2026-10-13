@@ -7,11 +7,12 @@ Le superviseur est un programme Java indépendant du backend. Tout son code est 
 1. Sélection du rapport terminé le plus récent et encore non traité.
 2. Vérification que la branche Git courante est exactement `analyse`.
 3. Exécution non interactive de `codex exec` avec le sandbox `workspace-write`.
-4. Nouvelle vérification de la branche.
-5. Exécution de `docker compose build backend`, qui compile et lance les tests Maven.
-6. Redéploiement par `docker compose up -d backend`.
-7. Attente de la disponibilité de l'API.
-8. Création et démarrage d'un monde utilisant la même configuration et la même graine que le dernier monde terminé.
+4. Vérification obligatoire d'un compte rendu Codex non vide et d'au moins une modification dans `src/main/java` ou `src/test/java`.
+5. Nouvelle vérification de la branche.
+6. Exécution de `docker compose build backend`, qui compile et lance les tests Maven.
+7. Redéploiement par `docker compose up -d backend`.
+8. Attente de la disponibilité de l'API.
+9. Création et démarrage d'un monde utilisant la même configuration et la même graine que le dernier monde terminé.
 
 Le superviseur ne crée, ne change et ne fusionne aucune branche. Toute divergence par rapport à `analyse` arrête immédiatement le cycle.
 

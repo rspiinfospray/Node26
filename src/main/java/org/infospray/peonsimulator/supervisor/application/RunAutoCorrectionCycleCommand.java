@@ -30,8 +30,11 @@ public class RunAutoCorrectionCycleCommand {
         int cycleNumber = completedCycles + 1;
         try {
             this.workspace.verifyBranch();
-            this.codexAgent.apply(report, cycleNumber);
+            WorkspaceSnapshot beforeCodex = this.workspace.snapshot();
+            CodexCorrectionResult correction = this.codexAgent.apply(report, cycleNumber);
             this.workspace.verifyBranch();
+            WorkspaceSnapshot afterCodex = this.workspace.snapshot();
+            this.validateCorrection(beforeCodex, afterCodex, correction);
             this.workspace.runTests();
             this.workspace.verifyBranch();
             this.workspace.deploy();
@@ -43,5 +46,13 @@ public class RunAutoCorrectionCycleCommand {
             this.reportRepository.markFailed(report, exception.getMessage());
             return new AutoCorrectionResult(AutoCorrectionResult.Status.STOPPED, "Cycle " + cycleNumber + " arrêté: " + exception.getMessage());
         }
+    }
+
+    private void validateCorrection(WorkspaceSnapshot beforeCodex, WorkspaceSnapshot afterCodex, CodexCorrectionResult correction) {
+        if (correction.response().isBlank()) { throw new IllegalStateException("Codex n'a produit aucun compte rendu"); }
+        java.util.Set<String> changedFiles = afterCodex.changedFilesSince(beforeCodex);
+        if (changedFiles.isEmpty()) { throw new IllegalStateException("Codex n'a produit aucune modification"); }
+        boolean containsCode = changedFiles.stream().map(path -> path.replace('\\', '/')).anyMatch(path -> path.startsWith("src/main/java/") || path.startsWith("src/test/java/"));
+        if (!containsCode) { throw new IllegalStateException("Codex n'a modifié aucun fichier Java de production ou de test: " + changedFiles); }
     }
 }

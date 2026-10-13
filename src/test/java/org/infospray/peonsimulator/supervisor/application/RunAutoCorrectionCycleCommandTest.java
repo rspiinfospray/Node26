@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,6 +27,8 @@ class RunAutoCorrectionCycleCommandTest {
         SimulationCycleLauncher launcher = mock(SimulationCycleLauncher.class);
         Path report = Path.of("reports/world.md");
         when(reports.nextPending()).thenReturn(Optional.of(report));
+        when(codex.apply(report, 1)).thenReturn(new CodexCorrectionResult("Correction appliquée"));
+        when(workspace.snapshot()).thenReturn(new WorkspaceSnapshot(Map.of(".idea/dataSources.xml", "initial")), new WorkspaceSnapshot(Map.of(".idea/dataSources.xml", "initial", "src/main/java/org/infospray/peonsimulator/domain/Peon.java", "modified")));
         RunAutoCorrectionCycleCommand command = new RunAutoCorrectionCycleCommand(reports, codex, workspace, launcher, 3);
 
         AutoCorrectionResult result = command.execute();
@@ -33,8 +36,10 @@ class RunAutoCorrectionCycleCommandTest {
         assertEquals(AutoCorrectionResult.Status.COMPLETED, result.status());
         InOrder order = inOrder(workspace, codex, launcher, reports);
         order.verify(workspace).verifyBranch();
+        order.verify(workspace).snapshot();
         order.verify(codex).apply(report, 1);
         order.verify(workspace).verifyBranch();
+        order.verify(workspace).snapshot();
         order.verify(workspace).runTests();
         order.verify(workspace).verifyBranch();
         order.verify(workspace).deploy();
@@ -66,6 +71,8 @@ class RunAutoCorrectionCycleCommandTest {
         SimulationCycleLauncher launcher = mock(SimulationCycleLauncher.class);
         Path report = Path.of("reports/world.md");
         when(reports.nextPending()).thenReturn(Optional.of(report));
+        when(codex.apply(report, 1)).thenReturn(new CodexCorrectionResult("Correction appliquée"));
+        when(workspace.snapshot()).thenReturn(new WorkspaceSnapshot(Map.of()), new WorkspaceSnapshot(Map.of("src/test/java/org/infospray/peonsimulator/PeonTest.java", "modified")));
         org.mockito.Mockito.doThrow(new IllegalStateException("tests failed")).when(workspace).runTests();
         RunAutoCorrectionCycleCommand command = new RunAutoCorrectionCycleCommand(reports, codex, workspace, launcher, 3);
 
@@ -73,6 +80,28 @@ class RunAutoCorrectionCycleCommandTest {
 
         assertEquals(AutoCorrectionResult.Status.STOPPED, result.status());
         verify(reports).markFailed(report, "tests failed");
+        verify(workspace, never()).deploy();
+        verify(launcher, never()).launch(org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void shouldStopBeforeTestsWhenCodexDoesNotModifyJavaCode() {
+        AutoCorrectionReportRepository reports = mock(AutoCorrectionReportRepository.class);
+        CodexCorrectionAgent codex = mock(CodexCorrectionAgent.class);
+        CorrectionWorkspace workspace = mock(CorrectionWorkspace.class);
+        SimulationCycleLauncher launcher = mock(SimulationCycleLauncher.class);
+        Path report = Path.of("reports/world.md");
+        when(reports.nextPending()).thenReturn(Optional.of(report));
+        when(codex.apply(report, 1)).thenReturn(new CodexCorrectionResult("Je n'ai rien modifié"));
+        WorkspaceSnapshot unchanged = new WorkspaceSnapshot(Map.of(".idea/dataSources.xml", "initial"));
+        when(workspace.snapshot()).thenReturn(unchanged, unchanged);
+        RunAutoCorrectionCycleCommand command = new RunAutoCorrectionCycleCommand(reports, codex, workspace, launcher, 3);
+
+        AutoCorrectionResult result = command.execute();
+
+        assertEquals(AutoCorrectionResult.Status.STOPPED, result.status());
+        verify(reports).markFailed(report, "Codex n'a produit aucune modification");
+        verify(workspace, never()).runTests();
         verify(workspace, never()).deploy();
         verify(launcher, never()).launch(org.mockito.ArgumentMatchers.anyInt());
     }
