@@ -15,6 +15,7 @@ import org.infospray.peonsimulator.domain.model.RememberedGraveObservation;
 import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.TerrainType;
 import org.infospray.peonsimulator.domain.model.StrategicPhase;
+import org.infospray.peonsimulator.domain.model.StrategyStatus;
 import org.infospray.peonsimulator.domain.model.StrategyType;
 import org.junit.jupiter.api.Test;
 
@@ -176,7 +177,52 @@ class RuleBasedPeonDecisionProviderTest {
         PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), UUID.randomUUID(), 80, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 90, 50), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9);
         PeonDecision decision = this.provider.decide(context);
         assertThat(decision.action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
-        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.VOIR).findFirst().orElseThrow().factors()).containsEntry("perception encore fraîche", -12.0);
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.VOIR).findFirst().orElseThrow().factors()).containsEntry("perception encore fraîche", -60.0);
+    }
+
+    @Test
+    void shouldPenalizeImmediateReturnToRecentlyVisitedCell() {
+        HexCoordinate recentPosition = new HexCoordinate(3, 2);
+        RememberedCell recent = new RememberedCell(new Cell(recentPosition, TerrainType.PLAIN, 0), true, 9);
+        PeonDecision contextDecision = this.provider.decide(this.context(100, false, Map.of(), Map.of("3:2", recent), List.of(), 0, List.of(recentPosition, new HexCoordinate(1, 2))));
+
+        assertThat(contextDecision.candidates().stream().filter(candidate -> recentPosition.equals(candidate.destination())).findFirst().orElseThrow().factors()).containsKey("retour immédiat");
+        assertThat(contextDecision.action().destination()).isNotEqualTo(recentPosition);
+    }
+
+    @Test
+    void shouldValueWheatFromUsefulHealingInsteadOfNominalHealing() {
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedGranary granary = new PeonDecisionContext.ObservedGranary(UUID.randomUUID(), teamId, new HexCoordinate(2, 2), 10);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 99, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, null, List.of(), 0, 0, 0, List.of(), null, granary, List.of(), List.of(granary), false, false, 4, null);
+
+        PeonDecision.CandidateScore wheat = this.provider.decide(context).candidates().stream().filter(candidate -> candidate.actionType() == ActionType.MANGER_BLE).findFirst().orElseThrow();
+
+        assertThat(wheat.factors()).containsEntry("soin utile", 0.6);
+        assertThat(wheat.factors().get("réserve renouvelable")).isLessThan(1.0);
+    }
+
+    @Test
+    void shouldNotApplyBonusFromCompletedStrategy() {
+        PeonDecisionContext base = this.agricultureContext(0, 0);
+        LongTermStrategy strategy = new LongTermStrategy(StrategyType.AUTONOMIE_ALIMENTAIRE, 1, base.teamId());
+        strategy.setPhase(StrategicPhase.CREER_UN_PREMIER_CHAMP);
+        strategy.setStatus(StrategyStatus.ACCOMPLIE);
+        PeonDecisionContext context = new PeonDecisionContext(base.peonId(), base.teamId(), base.healthPoints(), base.maxHealthPoints(), base.experiencePoints(), base.level(), base.position(), base.concealedByTree(), base.sequenceNumber(), base.decisionSeed(), base.personality(), base.learnedActions(), base.mentalMap(), base.peonsOnCurrentCell(), base.foodOnCurrentCell(), base.traversableNeighbors(), base.currentRound(), base.lastObservationRound(), base.currentTerrain(), base.treeHealthPoints(), base.woodQuantity(), base.woodBundleQuantity(), base.buildable(), base.house(), base.knownHouses(), base.usefulCommunicationCount(), base.consecutiveCommunicationCount(), base.sheepOnCurrentCell(), base.knownSheepPositions(), base.field(), base.granary(), base.knownFields(), base.knownGranaries(), base.fieldBuildable(), base.granaryBuildable(), base.livingTeamPeonCount(), strategy);
+
+        PeonDecision decision = this.provider.decide(context);
+
+        assertThat(decision.candidates()).allSatisfy(candidate -> assertThat(candidate.factors().keySet()).noneMatch(key -> key.startsWith("projet à long terme")));
+    }
+
+    @Test
+    void shouldNotOfferCommunicationToAnAbsentHost() {
+        UUID peonId = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedHouse ownHouse = new PeonDecisionContext.ObservedHouse(UUID.randomUUID(), peonId, teamId, new HexCoordinate(2, 2), true, true);
+        PeonDecisionContext context = new PeonDecisionContext(peonId, teamId, 100, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 90), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 0, false, ownHouse, List.of(ownHouse), 0, 0);
+
+        assertThat(this.provider.decide(context).candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.COMMUNIQUER);
     }
 
     @Test

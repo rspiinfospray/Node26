@@ -15,6 +15,7 @@ import org.infospray.peonsimulator.domain.model.RememberedCell;
 import org.infospray.peonsimulator.domain.model.RememberedGraveObservation;
 import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.StrategicPhase;
+import org.infospray.peonsimulator.domain.model.StrategyStatus;
 import org.infospray.peonsimulator.domain.model.StrategyType;
 import org.infospray.peonsimulator.domain.model.TerrainType;
 import org.springframework.stereotype.Component;
@@ -47,7 +48,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (context.granaryBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForGranary()) { candidates.add(this.scoreBuildGranary(context, situationKey)); }
         if (context.woodBundleQuantity() > 0) { candidates.add(this.scoreLoot(context, situationKey)); }
         context.peonsOnCurrentCell().stream().filter(peon -> !peon.teamId().equals(context.teamId())).forEach(enemy -> candidates.add(this.scoreAttack(context, enemy, situationKey)));
-        if (context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId())) || context.house() != null && context.house().hostTeamId() != null && context.house().hostTeamId().equals(context.teamId())) { candidates.add(this.scoreCommunicate(context, situationKey)); }
+        if (this.canCommunicate(context)) { candidates.add(this.scoreCommunicate(context, situationKey)); }
         RememberedPeonObservation knownEnemy = this.closestKnownEnemy(context);
         HexCoordinate knownFood = this.closestKnownFood(context);
         HexCoordinate knownSheep = this.closestKnownSheep(context);
@@ -105,9 +106,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
 
     private WeightedAction scoreEatWheat(PeonDecisionContext context, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
-        factors.put("réserve renouvelable", 35.0);
+        int usefulHealing = Math.min(this.defaults.getWheatHealthGain(), context.maxHealthPoints() - context.healthPoints());
+        factors.put("réserve renouvelable", usefulHealing == this.defaults.getWheatHealthGain() ? 35.0 : usefulHealing * 35.0 / this.defaults.getWheatHealthGain());
         factors.put("survie", (100.0 - this.healthPercentage(context)) * 0.9);
-        factors.put("soin", this.defaults.getWheatHealthGain() * 0.6);
+        factors.put("soin utile", usefulHealing * 0.6);
         this.addLearning(context, situationKey, ActionType.MANGER_BLE, factors);
         return this.weighted(context, new PeonAction(ActionType.MANGER_BLE, null, null, PeonPurpose.SURVIVRE, ""), factors);
     }
@@ -222,6 +224,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         RememberedCell destinationMemory = context.mentalMap().get(destination.q() + ":" + destination.r());
         factors.put("expérience", this.defaults.getMoveExperienceGain() * 0.35);
         if (destinationMemory != null && !destinationMemory.isVisited()) { factors.put("exploration", 18.0 + context.personality().getCuriosity() * 0.35); }
+        if (this.isMostRecentlyVisitedNeighbor(context, destinationMemory)) { factors.put("retour immédiat", -65.0); }
         if (survivalTarget != null) {
             int progress = context.position().distanceTo(survivalTarget.position()) - destination.distanceTo(survivalTarget.position());
             double need = (double) (context.maxHealthPoints() - context.healthPoints()) / context.maxHealthPoints();
@@ -277,7 +280,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         Map<String, Double> factors = new LinkedHashMap<>();
         int roundsSinceObservation = Math.max(0, context.currentRound() - context.lastObservationRound());
         int staleRounds = Math.max(0, roundsSinceObservation - 1);
-        factors.put(staleRounds == 0 ? "perception encore fraîche" : "perception à actualiser", staleRounds == 0 ? -12.0 : Math.min(35, staleRounds * 6.0));
+        factors.put(staleRounds == 0 ? "perception encore fraîche" : "perception à actualiser", staleRounds == 0 ? -60.0 : Math.min(35, staleRounds * 6.0));
         if (staleRounds > 0) { factors.put("curiosité", context.personality().getCuriosity() * 0.12); }
         if (grave != null) { factors.put("surveillance autour de la tombe", context.personality().getCuriosity() * 0.10 + context.personality().getAggressiveness() * 0.06); }
         if (context.concealedByTree() && enemy != null && this.isDangerous(context, enemy.healthPoints(), enemy.level())) { factors.put("maintien à couvert", context.personality().getPrudence() * 0.5); }
@@ -354,7 +357,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
 
     private double strategyBonus(PeonDecisionContext context, ActionType actionType) {
         LongTermStrategy strategy = context.longTermStrategy();
-        if (strategy == null) { return 0; }
+        if (strategy == null || strategy.getStatus() != StrategyStatus.EN_COURS) { return 0; }
         return switch (strategy.getType()) {
             case AUTONOMIE_ALIMENTAIRE -> switch (actionType) {
                 case CONSTRUIRE_MAISON -> strategy.getPhase() == org.infospray.peonsimulator.domain.model.StrategicPhase.ETABLIR_UN_FOYER ? 45 : 0;
@@ -453,6 +456,18 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     }
 
     private boolean isInsideHouse(PeonDecisionContext context) { return context.house() != null && context.house().actorInside(); }
+
+    private boolean isMostRecentlyVisitedNeighbor(PeonDecisionContext context, RememberedCell destinationMemory) {
+        if (destinationMemory == null || destinationMemory.getLastVisitedAtSequence() == null) { return false; }
+        long latestNeighborVisit = context.traversableNeighbors().stream().map(position -> context.mentalMap().get(position.q() + ":" + position.r())).filter(java.util.Objects::nonNull).map(RememberedCell::getLastVisitedAtSequence).filter(java.util.Objects::nonNull).mapToLong(Long::longValue).max().orElse(Long.MIN_VALUE);
+        return destinationMemory.getLastVisitedAtSequence() == latestNeighborVisit;
+    }
+
+    private boolean canCommunicate(PeonDecisionContext context) {
+        boolean allyPresent = context.peonsOnCurrentCell().stream().anyMatch(peon -> peon.teamId().equals(context.teamId()));
+        boolean alliedHostCanAnswer = context.house() != null && context.house().hostPeonId() != null && !context.house().hostPeonId().equals(context.peonId()) && context.teamId().equals(context.house().hostTeamId());
+        return allyPresent || alliedHostCanAnswer;
+    }
 
     private boolean isPredictablyLethal(PeonDecisionContext context, PeonAction action) {
         int experienceGain = switch (action.type()) {
