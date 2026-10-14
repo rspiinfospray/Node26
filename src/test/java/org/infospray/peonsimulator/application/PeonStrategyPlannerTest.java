@@ -5,8 +5,12 @@ import org.infospray.peonsimulator.domain.model.Cell;
 import org.infospray.peonsimulator.domain.model.Granary;
 import org.infospray.peonsimulator.domain.model.HexCoordinate;
 import org.infospray.peonsimulator.domain.model.House;
+import org.infospray.peonsimulator.domain.model.LongTermStrategy;
 import org.infospray.peonsimulator.domain.model.Peon;
 import org.infospray.peonsimulator.domain.model.PeonPersonality;
+import org.infospray.peonsimulator.domain.model.PeonRelation;
+import org.infospray.peonsimulator.domain.model.RememberedCell;
+import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.StrategicPhase;
 import org.infospray.peonsimulator.domain.model.StrategyType;
 import org.infospray.peonsimulator.domain.model.TerrainType;
@@ -23,6 +27,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PeonStrategyPlannerTest {
     private final PeonStrategyPlanner planner = new PeonStrategyPlanner();
     private final GameDefaultsProperties defaults = new GameDefaultsProperties();
+
+    @Test
+    void shouldTargetTheClosestKnownEnemyDuringProtection() {
+        UUID teamId = UUID.randomUUID();
+        Peon peon = new Peon(UUID.randomUUID(), "Eldamir", teamId, new HexCoordinate(0, 0));
+        peon.setPersonality(new PeonPersonality(0, 100, 0, 0, 0));
+        peon.setLongTermStrategy(new LongTermStrategy(StrategyType.PROTEGER_L_EQUIPE, 1, teamId));
+        HexCoordinate enemyPosition = new HexCoordinate(4, 0);
+        RememberedPeonObservation enemy = new RememberedPeonObservation(UUID.randomUUID(), UUID.randomUUID(), PeonRelation.ENEMY, enemyPosition, 100, 2, 10);
+        peon.getMentalMap().put("4:0", new RememberedCell(new Cell(enemyPosition, TerrainType.PLAIN, 0), false, 10, java.util.List.of(enemy)));
+        World world = new World();
+        world.setCurrentRound(1);
+        world.setPeons(new LinkedHashMap<>(Map.of(peon.getId(), peon)));
+        world.addCell(new Cell(new HexCoordinate(0, 0), TerrainType.PLAIN, 0));
+
+        this.planner.update(world, peon, this.defaults);
+
+        assertThat(peon.getLongTermStrategy().getType()).isEqualTo(StrategyType.PROTEGER_L_EQUIPE);
+        assertThat(peon.getLongTermStrategy().getTargetArea()).isEqualTo(enemyPosition);
+        assertThat(peon.getLongTermStrategy().getPhase()).isEqualTo(StrategicPhase.REJOINDRE_LA_MENACE);
+    }
 
     @Test
     void shouldCreatePersistentAgriculturalStrategyWithTacticalPhase() {

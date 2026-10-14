@@ -175,7 +175,8 @@ public class Illuvatar {
             events.add(this.event(world, request, actor, "PEON_ACTION_REJECTED", eventIndex, Map.of("reason", "PEON_NOT_ALIVE")));
         } else {
             this.resolveAction(world, actor, request, events, eventIndex);
-            if (actor.isAlive()) {
+            boolean rejected = events.stream().anyMatch(event -> "PEON_ACTION_REJECTED".equals(event.eventType()) && actor.getId().equals(event.peonId()));
+            if (actor.isAlive() && !rejected) {
                 int before = actor.getHealthPoints();
                 House shelter = actor.getInsideHouseId() == null ? null : world.getHouses().get(actor.getInsideHouseId());
                 int hungerLoss = shelter != null && shelter.contains(actor.getId()) ? (int) Math.ceil(world.getHungerHealthLossPerTurn() * this.defaults.getHouseHungerPercentage() / 100.0) : world.getHungerHealthLossPerTurn();

@@ -25,7 +25,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.UUID;
 
 @Component
@@ -69,12 +68,11 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             List<WeightedAction> survivalCandidates = selectionCandidates.stream().filter(candidate -> this.movesToward(candidate.action(), context.position(), survivalTarget.position()) || this.isEating(candidate.action())).toList();
             if (!survivalCandidates.isEmpty()) { selectionCandidates = survivalCandidates; }
         }
+        List<WeightedAction> thresholdSafeCandidates = selectionCandidates.stream().filter(candidate -> this.respectsSurvivalThreshold(context, candidate.action(), survivalTarget, safeHouse)).toList();
+        if (!thresholdSafeCandidates.isEmpty()) { selectionCandidates = thresholdSafeCandidates; }
         WeightedAction best = selectionCandidates.get(0);
-        List<WeightedAction> explorableAlternatives = selectionCandidates.stream().skip(1).filter(candidate -> candidate.score() >= best.score() - this.defaults.getExplorationMaximumScoreGap()).toList();
-        Random random = new Random(context.decisionSeed() ^ context.peonId().getMostSignificantBits() ^ context.sequenceNumber());
-        boolean criticalHealth = this.healthPercentage(context) <= this.defaults.getCriticalHealthExplorationThreshold();
-        boolean exploration = !criticalHealth && !explorableAlternatives.isEmpty() && random.nextInt(100) < this.defaults.getExplorationPercentage();
-        WeightedAction selected = exploration ? explorableAlternatives.get(random.nextInt(explorableAlternatives.size())) : best;
+        boolean exploration = false;
+        WeightedAction selected = best;
         PeonAction action = new PeonAction(selected.action().type(), selected.action().destination(), selected.action().targetPeonId(), selected.action().purpose(), this.explanation(selected, exploration));
         List<PeonDecision.CandidateScore> scores = candidates.stream().map(candidate -> new PeonDecision.CandidateScore(candidate.action().type(), candidate.action().destination(), candidate.action().targetPeonId(), this.round(candidate.score()), candidate.factors())).toList();
         return new PeonDecision(action, situationKey, this.round(selected.score()), exploration, scores);
@@ -222,8 +220,11 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     private WeightedAction scoreMove(PeonDecisionContext context, HexCoordinate destination, RememberedPeonObservation enemy, FoodTarget survivalTarget, HexCoordinate tree, HexCoordinate loot, HexCoordinate field, RememberedGraveObservation grave, PeonDecisionContext.ObservedHouse safeHouse, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
         RememberedCell destinationMemory = context.mentalMap().get(destination.q() + ":" + destination.r());
+        HexCoordinate frontier = this.closestExplorationFrontier(context);
+        boolean graveWarningDominates = grave != null && context.personality().getPrudence() > context.personality().getCuriosity() + context.personality().getAggressiveness();
         factors.put("expérience", this.defaults.getMoveExperienceGain() * 0.35);
         if (destinationMemory != null && !destinationMemory.isVisited()) { factors.put("exploration", 18.0 + context.personality().getCuriosity() * 0.35); }
+        if (frontier != null && !graveWarningDominates) { factors.put("progression vers une frontière", (context.position().distanceTo(frontier) - destination.distanceTo(frontier)) * (15.0 + context.personality().getCuriosity() * 0.15)); }
         if (this.isMostRecentlyVisitedNeighbor(context, destinationMemory)) { factors.put("retour immédiat", -65.0); }
         if (survivalTarget != null) {
             int progress = context.position().distanceTo(survivalTarget.position()) - destination.distanceTo(survivalTarget.position());
@@ -273,7 +274,6 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (tacticalProgress != 0) { factors.put("progression vers l'exploitation", tacticalProgress); }
         factors.put("coût en PV", -this.defaults.getMoveHealthCost() * (1 + context.personality().getPrudence() / 100.0));
         this.addLearning(context, situationKey, ActionType.SE_DEPLACER, factors);
-        boolean graveWarningDominates = grave != null && context.personality().getPrudence() > context.personality().getCuriosity() + context.personality().getAggressiveness();
         PeonPurpose purpose = survivalTarget != null && this.healthPercentage(context) < this.defaults.getSeekFoodHealthThreshold() || enemy != null && this.isDangerous(context, enemy.healthPoints(), enemy.level()) || graveWarningDominates ? PeonPurpose.SURVIVRE : PeonPurpose.GAGNER_DES_NIVEAUX;
         return this.weighted(context, new PeonAction(ActionType.SE_DEPLACER, destination, null, purpose, ""), factors);
     }
@@ -399,6 +399,8 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         return context.mentalMap().values().stream().filter(cell -> cell.getRememberedFoodQuantity() > 0).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(context.position()))).map(RememberedCell::getCoordinate).orElse(null);
     }
 
+    private HexCoordinate closestExplorationFrontier(PeonDecisionContext context) { return context.mentalMap().values().stream().filter(cell -> !cell.isVisited()).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(context.position()))).map(RememberedCell::getCoordinate).orElse(null); }
+
     private HexCoordinate closestKnownSheep(PeonDecisionContext context) {
         return context.knownSheepPositions().stream().min(Comparator.comparingInt(position -> position.distanceTo(context.position()))).orElse(null);
     }
@@ -473,6 +475,17 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     }
 
     private boolean isPredictablyLethal(PeonDecisionContext context, PeonAction action) {
+        return this.projectedHealth(context, action) <= 0;
+    }
+
+    private boolean respectsSurvivalThreshold(PeonDecisionContext context, PeonAction action, FoodTarget survivalTarget, PeonDecisionContext.ObservedHouse safeHouse) {
+        if (this.projectedHealth(context, action) >= context.maxHealthPoints() * this.defaults.getEnemyFleeHealthThreshold() / 100.0) { return true; }
+        if (this.isEating(action)) { return true; }
+        if (survivalTarget != null && this.movesToward(action, context.position(), survivalTarget.position())) { return true; }
+        return safeHouse != null && action.type() == ActionType.SE_DEPLACER && action.destination() != null && action.destination().distanceTo(safeHouse.position()) < context.position().distanceTo(safeHouse.position());
+    }
+
+    private int projectedHealth(PeonDecisionContext context, PeonAction action) {
         int experienceGain = switch (action.type()) {
             case MANGER -> this.defaults.getEatExperienceGain();
             case MANGER_MOUTON -> this.defaults.getSheepExperienceGain();
@@ -496,7 +509,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (action.type() == ActionType.SE_DEPLACER) { health -= this.defaults.getMoveHealthCost(); }
         boolean shelteredAfterAction = action.type() == ActionType.CONSTRUIRE_MAISON || action.type() == ActionType.SE_DEPLACER && this.movesIntoUnoccupiedHouse(context, action) || action.type() != ActionType.SE_DEPLACER && this.isInsideHouse(context);
         int hungerLoss = shelteredAfterAction ? (int) Math.ceil(this.defaults.getHungerHealthLossPerTurn() * this.defaults.getHouseHungerPercentage() / 100.0) : this.defaults.getHungerHealthLossPerTurn();
-        return health - hungerLoss - this.predictableEnemyDamage(context, action) <= 0;
+        return health - hungerLoss - this.predictableEnemyDamage(context, action);
     }
 
     private int predictableEnemyDamage(PeonDecisionContext context, PeonAction action) {

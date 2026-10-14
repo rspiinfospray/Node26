@@ -54,7 +54,7 @@ public class PeonStrategyPlanner {
         int storedWheat = granaries.stream().mapToInt(Granary::getWheatQuantity).sum();
         int targetFields = Math.max(3, (int) Math.ceil(allies.size() / 2.0) + 1);
         int safetyStock = Math.max(allies.size(), (int) Math.ceil(allies.size() * defaults.getHungerHealthLossPerTurn() * 12.0 / defaults.getWheatHealthGain()));
-        long knownEnemies = peon.getMentalMap().values().stream().flatMap(memory -> memory.getRememberedPeons().stream()).filter(observation -> !observation.teamId().equals(peon.getTeamId())).map(RememberedPeonObservation::peonId).distinct().count();
+        List<RememberedPeonObservation> knownEnemies = peon.getMentalMap().values().stream().flatMap(memory -> memory.getRememberedPeons().stream()).filter(observation -> !observation.teamId().equals(peon.getTeamId())).toList();
         double exploredPercentage = world.getCells().isEmpty() ? 100 : peon.getMentalMap().size() * 100.0 / world.getCells().size();
         Map<StrategyType, Long> assignments = new EnumMap<>(StrategyType.class);
         allies.stream().filter(ally -> !ally.getId().equals(peon.getId())).map(Peon::getLongTermStrategy).filter(java.util.Objects::nonNull).filter(strategy -> strategy.getStatus() == StrategyStatus.EN_COURS).map(LongTermStrategy::getType).forEach(type -> assignments.merge(type, 1L, Long::sum));
@@ -74,7 +74,7 @@ public class PeonStrategyPlanner {
         double homeNeed = (situation.ownsHouse() ? 5 : 65) + (situation.houses().isEmpty() ? 20 : 0) + (situation.granaries().isEmpty() ? 10 : 0);
         scores.put(StrategyType.CONSTRUIRE_UN_FOYER, homeNeed + peon.getPersonality().getIngenuity() * 0.45 + peon.getPersonality().getPrudence() * 0.35 + this.pastValue(peon, StrategyType.CONSTRUIRE_UN_FOYER));
         scores.put(StrategyType.EXPLORER_LE_MONDE, Math.max(0, 100 - situation.exploredPercentage()) * 0.65 + peon.getPersonality().getCuriosity() * 0.75 + this.pastValue(peon, StrategyType.EXPLORER_LE_MONDE));
-        scores.put(StrategyType.PROTEGER_L_EQUIPE, 15 + situation.knownEnemies() * 22.0 + peon.getPersonality().getAggressiveness() * 0.75 + peon.getPersonality().getPrudence() * 0.3 + this.pastValue(peon, StrategyType.PROTEGER_L_EQUIPE));
+        scores.put(StrategyType.PROTEGER_L_EQUIPE, 15 + situation.knownEnemies().stream().map(RememberedPeonObservation::peonId).distinct().count() * 22.0 + peon.getPersonality().getAggressiveness() * 0.75 + peon.getPersonality().getPrudence() * 0.3 + this.pastValue(peon, StrategyType.PROTEGER_L_EQUIPE));
         scores.replaceAll((type, score) -> score - this.assignmentPenalty(type, situation));
         return scores;
     }
@@ -84,7 +84,7 @@ public class PeonStrategyPlanner {
             case AUTONOMIE_ALIMENTAIRE -> Math.min(3, Math.max(1, (int) Math.ceil(situation.aliveAllies() / 3.0)));
             case CONSTRUIRE_UN_FOYER -> situation.houses().isEmpty() ? 2 : 1;
             case EXPLORER_LE_MONDE -> 1;
-            case PROTEGER_L_EQUIPE -> situation.knownEnemies() > 0 ? 2 : 1;
+            case PROTEGER_L_EQUIPE -> !situation.knownEnemies().isEmpty() ? 2 : 1;
         };
         return Math.max(0, situation.assignments().getOrDefault(type, 0L) - desired + 1) * 70.0;
     }
@@ -152,16 +152,17 @@ public class PeonStrategyPlanner {
     }
 
     private void updateProtectStrategy(LongTermStrategy strategy, StrategicSituation situation, Peon peon) {
+        RememberedPeonObservation closestEnemy = situation.knownEnemies().stream().min(Comparator.comparingInt(enemy -> enemy.position().distanceTo(peon.getPosition()))).orElse(null);
         strategy.setStatus(StrategyStatus.EN_COURS);
-        strategy.setObjectives(Map.of("menacesConnues", (int) situation.knownEnemies(), "alliesVivants", situation.aliveAllies()));
-        strategy.setPhase(situation.knownEnemies() > 0 ? StrategicPhase.REJOINDRE_LA_MENACE : StrategicPhase.PATROUILLER);
-        strategy.setTacticalObjective(situation.knownEnemies() > 0 ? "Neutraliser ou éloigner les menaces connues" : "Patrouiller autour du territoire allié");
-        strategy.setNextPriority(situation.knownEnemies() > 0 ? "Rejoindre prudemment l'ennemi le plus proche" : "Observer et rester proche des alliés");
-        strategy.setTargetArea(peon.getPosition());
-        strategy.setProgress(situation.knownEnemies() == 0 ? 100 : Math.max(10, 70 - situation.knownEnemies() * 10));
-        if (situation.knownEnemies() == 0) { strategy.setStatus(StrategyStatus.ACCOMPLIE); }
+        strategy.setObjectives(Map.of("menacesConnues", (int) situation.knownEnemies().stream().map(RememberedPeonObservation::peonId).distinct().count(), "alliesVivants", situation.aliveAllies()));
+        strategy.setPhase(closestEnemy != null ? StrategicPhase.REJOINDRE_LA_MENACE : StrategicPhase.PATROUILLER);
+        strategy.setTacticalObjective(closestEnemy != null ? "Neutraliser ou éloigner les menaces connues" : "Patrouiller autour du territoire allié");
+        strategy.setNextPriority(closestEnemy != null ? "Rejoindre prudemment l'ennemi le plus proche" : "Observer et rester proche des alliés");
+        strategy.setTargetArea(closestEnemy == null ? peon.getPosition() : closestEnemy.position());
+        strategy.setProgress(closestEnemy == null ? 100 : Math.max(10, 70 - peon.getPosition().distanceTo(closestEnemy.position()) * 10));
+        if (closestEnemy == null) { strategy.setStatus(StrategyStatus.ACCOMPLIE); }
     }
 
-    private record StrategicSituation(int aliveAllies, List<House> houses, List<Granary> granaries, List<WheatField> fields, int storedWheat, int targetFields, int safetyStock, long knownEnemies, double exploredPercentage, Map<StrategyType, Long> assignments, boolean ownsHouse) {
+    private record StrategicSituation(int aliveAllies, List<House> houses, List<Granary> granaries, List<WheatField> fields, int storedWheat, int targetFields, int safetyStock, List<RememberedPeonObservation> knownEnemies, double exploredPercentage, Map<StrategyType, Long> assignments, boolean ownsHouse) {
     }
 }

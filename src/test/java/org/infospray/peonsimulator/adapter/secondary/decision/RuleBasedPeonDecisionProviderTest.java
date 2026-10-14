@@ -27,6 +27,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RuleBasedPeonDecisionProviderTest {
     @Test
+    void shouldKeepAHealthReserveWhenNoSurvivalDestinationExists() {
+        ActionKnowledge movement = new ActionKnowledge();
+        movement.setExpectedReward(200);
+        String situation = "PV_CORRECTS:SEUL:NOURRITURE_INCONNUE:MOUTON_INCONNU:AUCUNE_TOMBE_CONNUE:BOIS_INCOMPLET:BUTIN_INCONNU:SANS_ABRI:DECOUVERT";
+        PeonDecision decision = this.provider.decide(this.context(50, false, Map.of(situation + "|SE_DEPLACER", movement), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2))));
+
+        assertThat(decision.action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
+    }
+
+    @Test
+    void shouldAlwaysSelectTheHighestAdmissibleScore() {
+        GameDefaultsProperties properties = new GameDefaultsProperties();
+        properties.setExplorationPercentage(100);
+        RuleBasedPeonDecisionProvider provider = new RuleBasedPeonDecisionProvider(properties);
+        PeonDecision decision = provider.decide(this.context(100, false, Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2))));
+
+        assertThat(decision.explorationChoice()).isFalse();
+        assertThat(decision.selectedScore()).isEqualTo(decision.candidates().getFirst().score());
+    }
+
+    @Test
+    void shouldPreferMovementTowardTheClosestUnvisitedFrontier() {
+        RememberedCell frontier = new RememberedCell(new Cell(new HexCoordinate(4, 2), TerrainType.PLAIN, 0), false, 5);
+        PeonDecision decision = this.provider.decide(this.context(100, false, Map.of(), Map.of("4:2", frontier), List.of(), 0, List.of(new HexCoordinate(3, 2), new HexCoordinate(1, 2))));
+
+        assertThat(this.movementScore(decision, new HexCoordinate(3, 2))).isGreaterThan(this.movementScore(decision, new HexCoordinate(1, 2)));
+        assertThat(decision.action().destination()).isEqualTo(new HexCoordinate(3, 2));
+    }
+
+    @Test
     void shouldEscapeInsteadOfAttackingWhenEnemyRetaliationWouldBeLethal() {
         UUID teamId = UUID.randomUUID();
         PeonDecisionContext.ObservedPeon enemy = new PeonDecisionContext.ObservedPeon(UUID.randomUUID(), UUID.randomUUID(), 100, 3);
