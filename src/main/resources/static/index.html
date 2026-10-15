@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Illuvatar — Simulateur de peons</title>
-    <link rel="stylesheet" href="/styles.css?v=20261011-19">
+    <link rel="stylesheet" href="/styles.css?v=20261015-20">
     <link rel="stylesheet" href="/journal.css?v=20261004-16">
 </head>
 <body>
 <header class="topbar">
     <div>
-        <p class="eyebrow">CHRONIQUES D’ILLUVATAR</p>
-        <div class="title-line"><h1>Le monde des peons</h1><span class="app-version" aria-label="Version 1.0.0">v1.0.0</span></div>
+        <p class="eyebrow">POWERED BY ILLUVATAR</p>
+        <div class="title-line"><h1>Peon simulator</h1><span class="app-version" aria-label="Version 1.0.0">v1.0.0</span></div>
     </div>
     <div class="world-picker">
         <select id="worldSelect" aria-label="Choisir un monde"></select>
@@ -42,7 +42,7 @@
             <label class="switch"><input id="mentalMapToggle" type="checkbox"><span>Carte mentale</span></label>
         </div>
         <div class="canvas-wrap">
-            <div id="worldViewport" aria-label="Carte du monde rendue avec PixiJS et WebGL"></div>
+            <div id="worldViewport" aria-label="Carte isométrique en 3D du monde rendue avec PixiJS et WebGL"></div>
             <div id="emptyState" class="empty-state">
                 <div class="sigil">⌬</div>
                 <h2>Aucun monde éveillé</h2>
@@ -161,6 +161,6 @@
 </dialog>
 
 <script src="/vendor/pixi.min.js?v=8.22.0"></script>
-<script type="module" src="/app.js?v=20261011-33"></script>
+<script type="module" src="/app.js?v=20261015-36"></script>
 </body>
 </html>

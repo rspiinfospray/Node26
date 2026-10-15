@@ -5,6 +5,7 @@ const pixiApp = new PIXI.Application();
 await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, antialias:true, autoDensity:true, resolution:window.devicePixelRatio || 1, autoStart:false });
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
+pixiApp.stage.sortableChildren = true;
 const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png?v=20261011-2', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
@@ -232,19 +233,27 @@ function geometry(world, rect) {
     const availableWidth = rect.width - 40;
     const availableHeight = rect.height - 40;
     const coordinates = Object.values(world.cells).map(cell => cell.coordinate);
-    const rawX = coordinates.map(coordinate => 1.5 * coordinate.q);
-    const rawY = coordinates.map(coordinate => sqrt3 * (coordinate.r + coordinate.q / 2));
+    const projected = coordinates.map(coordinate => projectIsometric(1.5 * coordinate.q, sqrt3 * (coordinate.r + coordinate.q / 2)));
+    const rawX = projected.map(point => point.x);
+    const rawY = projected.map(point => point.y);
     const bounds = { minX:Math.min(...rawX), maxX:Math.max(...rawX), minY:Math.min(...rawY), maxY:Math.max(...rawY) };
-    const byWidth = availableWidth / (bounds.maxX - bounds.minX + 2);
-    const byHeight = availableHeight / (bounds.maxY - bounds.minY + 2);
-    const size = Math.max(2, Math.min(14, byWidth, byHeight)) * state.zoom;
-    const mapWidth = size * (bounds.maxX - bounds.minX + 2);
-    const mapHeight = size * (bounds.maxY - bounds.minY + 2);
-    return { size, offsetX:(rect.width-mapWidth)/2+size-bounds.minX*size+state.panX, offsetY:(rect.height-mapHeight)/2+size-bounds.minY*size+state.panY };
+    const byWidth = availableWidth / (bounds.maxX - bounds.minX + 2.5);
+    const byHeight = availableHeight / (bounds.maxY - bounds.minY + 2.2);
+    const size = Math.max(2, Math.min(18, byWidth, byHeight)) * state.zoom;
+    const mapWidth = size * (bounds.maxX - bounds.minX);
+    const mapHeight = size * (bounds.maxY - bounds.minY);
+    return { size, depth:Math.max(2, size * .24), offsetX:(rect.width-mapWidth)/2-bounds.minX*size+state.panX, offsetY:(rect.height-mapHeight)/2-bounds.minY*size+state.panY };
 }
 
-function centerOf(coordinate, geo) { return { x: geo.offsetX + geo.size * 1.5 * coordinate.q, y: geo.offsetY + geo.size * Math.sqrt(3) * (coordinate.r + coordinate.q / 2) }; }
-function hexPoints(size) { return Array.from({ length:6 }, (_, index) => { const angle = Math.PI / 3 * index; return [size * Math.cos(angle), size * Math.sin(angle)]; }).flat(); }
+function projectIsometric(x, y) { const axialScale = 1 / Math.sqrt(3); return { x:x - y * axialScale, y:(x * axialScale + y) * .68 }; }
+function centerOf(coordinate, geo) { const point = projectIsometric(1.5 * coordinate.q, Math.sqrt(3) * (coordinate.r + coordinate.q / 2)); return { x:geo.offsetX + geo.size * point.x, y:geo.offsetY + geo.size * point.y }; }
+function hexPoints(size) { return Array.from({ length:6 }, (_, index) => { const angle = Math.PI / 3 * index; const point = projectIsometric(Math.cos(angle), Math.sin(angle)); return [size * point.x, size * point.y]; }).flat(); }
+function objectDepth(point, offset = 0) { return 100000 + point.y + offset; }
+function drawGroundShadow(point, geo, width, alpha = .26) {
+    const shadow = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .18, width, Math.max(2, width * .28)).fill({ color:'#000000', alpha });
+    shadow.zIndex = objectDepth(point, -2);
+    pixiApp.stage.addChild(shadow);
+}
 
 function drawWorld() {
     const world = state.world;
@@ -304,30 +313,33 @@ function drawSheep(sheep, geo, remembered) {
         const sprite = new PIXI.Sprite(assets.sheep);
         const size = Math.max(8, geo.size * 1.05);
         sprite.anchor.set(.5); sprite.position.set(point.x + Math.cos(angle) * spread, point.y + Math.sin(angle) * spread); sprite.width = size; sprite.height = size; sprite.alpha = remembered ? .55 : 1;
+        sprite.zIndex = objectDepth(sprite.position, index * .01);
         pixiApp.stage.addChild(sprite);
     }));
 }
 
 function drawHouse(house, geo) {
     const point = centerOf(house.position, geo);
-    if (house.id === state.selectedHouseId) { pixiApp.stage.addChild(new PIXI.Graphics().circle(point.x, point.y, Math.max(7, geo.size * .72)).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .09) })); }
+    drawGroundShadow(point, geo, Math.max(7, geo.size * .62));
+    if (house.id === state.selectedHouseId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(7, geo.size * .78), Math.max(4, geo.size * .35)).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .09) }); selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection); }
     const sprite = new PIXI.Sprite(assets.house);
-    const size = Math.max(10, geo.size * 1.55);
-    sprite.anchor.set(.5, .58); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+    const size = Math.max(10, geo.size * 2.15);
+    sprite.anchor.set(.5, .78); sprite.position.set(point.x, point.y + geo.size * .2); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
     pixiApp.stage.addChild(sprite);
 }
 
 function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
     const point = centerOf(item.position, geo);
-    if (kind === 'granary' && item.id === state.selectedGranaryId) { pixiApp.stage.addChild(new PIXI.Graphics().circle(point.x, point.y, Math.max(8, geo.size * .78)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) })); }
+    if (kind === 'granary') drawGroundShadow(point, geo, Math.max(7, geo.size * .58));
+    if (kind === 'granary' && item.id === state.selectedGranaryId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(8, geo.size * .8), Math.max(4, geo.size * .36)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) }); selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection); }
     const sprite = new PIXI.Sprite(texture);
-    const size = kind === 'field' ? Math.max(24, geo.size * 3) : Math.max(10, geo.size * 1.35);
-    sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+    const size = kind === 'field' ? Math.max(24, geo.size * 2.35) : Math.max(10, geo.size * 1.9);
+    sprite.anchor.set(.5, kind === 'field' ? .5 : .76); sprite.position.set(point.x, point.y + (kind === 'field' ? 0 : geo.size * .16)); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
     pixiApp.stage.addChild(sprite);
     if (quantity > 0 && geo.size > 10) {
         const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } } });
         const labelOffset = kind === 'field' ? geo.size * .62 : size * .3;
-        label.anchor.set(.5); label.position.set(point.x + labelOffset, point.y + labelOffset); pixiApp.stage.addChild(label);
+        label.anchor.set(.5); label.position.set(point.x + labelOffset, point.y + labelOffset); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label);
     }
 }
 
@@ -351,7 +363,7 @@ function drawSelectedGranaryNetwork(world, geo) {
         links.moveTo(origin.x, origin.y).lineTo(target.x, target.y);
         links.circle(target.x, target.y, Math.max(7, geo.size * .66));
     });
-    links.stroke({ color, width:Math.max(1.5, geo.size * .08), alpha:.85 });
+    links.stroke({ color, width:Math.max(1.5, geo.size * .08), alpha:.85 }); links.zIndex = -50000;
     pixiApp.stage.addChild(links);
 }
 
@@ -384,29 +396,34 @@ function drawRememberedPeons(selected, world, geo) {
 function drawCell(cell, point, geo, known) {
     const texture = cell.terrain === 'ROCK' ? assets.rock : cell.terrain === 'TREE' ? assets.tree : assets.grass;
     const fill = known ? { texture, textureSpace:'local', color:cell.terrain === 'ROCK' ? '#dddddd' : '#e8ffe1' } : '#0c0f0c';
-    const cellGraphic = new PIXI.Graphics().poly(hexPoints(geo.size - .35)).fill(fill).stroke({ color:known ? '#738069' : '#151915', alpha:known ? .34 : 1, width:.6 });
-    cellGraphic.position.set(point.x, point.y);
-    pixiApp.stage.addChild(cellGraphic);
+    const points = hexPoints(geo.size - .35);
+    const tile = new PIXI.Container();
+    tile.position.set(point.x, point.y); tile.zIndex = -100000 + point.y;
+    const rightSide = new PIXI.Graphics().poly([points[0], points[1], points[2], points[3], points[2], points[3] + geo.depth, points[0], points[1] + geo.depth]).fill(known ? '#26351f' : '#080a08');
+    const leftSide = new PIXI.Graphics().poly([points[2], points[3], points[4], points[5], points[4], points[5] + geo.depth, points[2], points[3] + geo.depth]).fill(known ? '#1a2818' : '#060806');
+    const top = new PIXI.Graphics().poly(points).fill(fill).stroke({ color:known ? '#92a180' : '#151915', alpha:known ? .5 : 1, width:Math.max(.6, geo.size * .025) });
+    tile.addChild(rightSide, leftSide, top);
+    pixiApp.stage.addChild(tile);
 }
 
 function drawFood(cell, point, geo) {
     const quantityScale = .72 + Math.min(cell.foodQuantity, 4) * .08;
     const size = geo.size * quantityScale;
     const sprite = new PIXI.Sprite(assets.food);
-    sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+    sprite.anchor.set(.5, .72); sprite.position.set(point.x, point.y + geo.size * .08); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
     pixiApp.stage.addChild(sprite);
     if (geo.size > 10) {
         const label = new PIXI.Text({ text:String(cell.foodQuantity), style:{ fill:'#ffffff', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#17120a', width:2 } } });
-        label.anchor.set(.5); label.position.set(point.x + size * .32, point.y + size * .34); pixiApp.stage.addChild(label);
+        label.anchor.set(.5); label.position.set(point.x + size * .32, point.y + size * .34); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label);
     }
 }
 
 function drawWoodBundle(quantity, point, geo) {
     const sprite = new PIXI.Sprite(assets.woodBundle);
     const size = Math.max(7, geo.size * .82);
-    sprite.anchor.set(.5); sprite.position.set(point.x - geo.size * .48, point.y + geo.size * .38); sprite.width = size; sprite.height = size;
+    sprite.anchor.set(.5, .7); sprite.position.set(point.x - geo.size * .48, point.y + geo.size * .38); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point, 1);
     pixiApp.stage.addChild(sprite);
-    if (geo.size > 10) { const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4d5', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .3), fontWeight:'700', stroke:{ color:'#25150b', width:2 } } }); label.anchor.set(.5); label.position.set(sprite.x + size * .3, sprite.y + size * .3); pixiApp.stage.addChild(label); }
+    if (geo.size > 10) { const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4d5', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .3), fontWeight:'700', stroke:{ color:'#25150b', width:2 } } }); label.anchor.set(.5); label.position.set(sprite.x + size * .3, sprite.y + size * .3); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label); }
 }
 
 function positionedGraves(graves, geo) {
@@ -446,11 +463,11 @@ function drawGravePresentations(presentations, geo, remembered) {
     presentations.forEach(({ grave, point }) => {
         const sprite = new PIXI.Sprite(assets.grave);
         const size = Math.max(7, geo.size * .9);
-        sprite.anchor.set(.5); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size;
+        sprite.anchor.set(.5, .72); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
         sprite.alpha = remembered ? .5 : grave.peonId === state.selectedPeonId ? 1 : .88;
         if (grave.peonId === state.selectedPeonId) {
             const selection = new PIXI.Graphics().circle(point.x, point.y, size * .46).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .08) });
-            pixiApp.stage.addChild(selection);
+            selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection);
         }
         pixiApp.stage.addChild(sprite);
     });
@@ -470,7 +487,7 @@ function drawPeon(peon, world, geo, presentation = {}) {
     const spriteHeight = Math.max(6, geo.size * 1.28); const spriteWidth = spriteHeight * .72;
     const relationColor = presentation.relation === 'ENEMY' ? '#ff6666' : presentation.relation === 'ALLY' ? '#7fdb86' : '#f4d58a';
     const peonContainer = new PIXI.Container();
-    peonContainer.position.set(x, y);
+    peonContainer.position.set(x, y); peonContainer.zIndex = objectDepth({ x, y }, 1);
     peonContainer.alpha = presentation.remembered ? .48 : 1;
     const marker = new PIXI.Graphics().ellipse(0, spriteHeight * .25, spriteWidth * .43, spriteHeight * .28).fill({ color:team?.color || '#dddddd', alpha:.8 });
     if (!presentation.remembered && peon.id === state.selectedPeonId) marker.stroke({ color:'#ffffff', width:Math.max(1, geo.size * .09) });
