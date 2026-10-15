@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.sql.PreparedStatement;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
@@ -26,9 +27,18 @@ public class JdbcEventRepository implements EventRepository {
 
     @Override
     public void appendAll(List<SimulationEvent> events) {
-        for (SimulationEvent event : events) {
-            this.jdbcTemplate.update("INSERT INTO world_events(event_id, world_id, action_id, sequence_number, event_index, event_type, event_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", event.eventId().toString(), event.worldId().toString(), event.actionId() == null ? null : event.actionId().toString(), event.sequenceNumber(), event.eventIndex(), event.eventType(), this.write(event), Timestamp.from(event.occurredAt()));
-        }
+        if (events.isEmpty()) { return; }
+        String sql = "INSERT INTO world_events(event_id, world_id, action_id, sequence_number, event_index, event_type, event_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        this.jdbcTemplate.batchUpdate(sql, events, events.size(), (PreparedStatement statement, SimulationEvent event) -> {
+            statement.setString(1, event.eventId().toString());
+            statement.setString(2, event.worldId().toString());
+            statement.setString(3, event.actionId() == null ? null : event.actionId().toString());
+            statement.setLong(4, event.sequenceNumber());
+            statement.setInt(5, event.eventIndex());
+            statement.setString(6, event.eventType());
+            statement.setString(7, this.write(event));
+            statement.setTimestamp(8, Timestamp.from(event.occurredAt()));
+        });
     }
 
     @Override

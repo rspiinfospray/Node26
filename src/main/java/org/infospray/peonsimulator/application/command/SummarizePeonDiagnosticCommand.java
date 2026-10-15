@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 public class SummarizePeonDiagnosticCommand {
@@ -21,7 +22,8 @@ public class SummarizePeonDiagnosticCommand {
 
     public PeonDiagnosticSummary execute(UUID worldId, UUID peonId, Integer fromRound, Integer toRound) {
         List<SimulationEvent> events = this.eventRepository.find(new EventQuery(worldId, 0, 2000, peonId, fromRound, toRound, Set.of()));
-        List<PeonDiagnosticResponse.Turn> turns = events.stream().filter(event -> event.eventType().equals("PEON_DECISION_MADE")).map(event -> new PeonDiagnosticResponse.Turn(event.roundNumber(), event.sequenceNumber(), event.payload(), events.stream().filter(outcome -> outcome.sequenceNumber() == event.sequenceNumber() && !outcome.eventType().equals("PEON_DECISION_MADE")).map(outcome -> Map.<String, Object>of("eventType", outcome.eventType(), "payload", outcome.payload())).toList())).toList();
+        Map<Long, List<SimulationEvent>> eventsBySequence = events.stream().collect(Collectors.groupingBy(SimulationEvent::sequenceNumber));
+        List<PeonDiagnosticResponse.Turn> turns = events.stream().filter(event -> event.eventType().equals("PEON_DECISION_MADE")).map(event -> new PeonDiagnosticResponse.Turn(event.roundNumber(), event.sequenceNumber(), event.payload(), eventsBySequence.getOrDefault(event.sequenceNumber(), List.of()).stream().filter(outcome -> !outcome.eventType().equals("PEON_DECISION_MADE")).map(outcome -> Map.<String, Object>of("eventType", outcome.eventType(), "payload", outcome.payload())).toList())).toList();
         List<PeonDiagnosticSummary.Anomaly> anomalies = new ArrayList<>();
         this.detectRepeatedCriticalActions(turns, anomalies);
         this.detectOscillation(turns, anomalies);

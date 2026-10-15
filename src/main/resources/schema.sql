@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS world_events (
     occurred_at TIMESTAMP NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_worlds_status_updated ON worlds(status, updated_at);
+
 CREATE INDEX IF NOT EXISTS idx_world_events_order ON world_events(world_id, sequence_number, event_index);
 
 CREATE TABLE IF NOT EXISTS world_snapshots (

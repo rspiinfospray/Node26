@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 public class GenerateWorldBehaviorReportCommand {
@@ -62,8 +63,9 @@ public class GenerateWorldBehaviorReportCommand {
         markdown.append("- Péons : ").append(world.getPeons().size()).append(", survivants : ").append(world.alivePeons().size()).append("\n");
         markdown.append("- Événements analysés : ").append(events.size()).append("\n");
         markdown.append("- Généré le : ").append(Instant.now()).append("\n\n");
+        Map<UUID, List<SimulationEvent>> eventsByPeon = events.stream().filter(event -> event.peonId() != null).collect(Collectors.groupingBy(SimulationEvent::peonId));
         for (Peon peon : world.getPeons().values()) {
-            List<SimulationEvent> peonEvents = events.stream().filter(event -> peon.getId().equals(event.peonId())).toList();
+            List<SimulationEvent> peonEvents = eventsByPeon.getOrDefault(peon.getId(), List.of());
             PeonDiagnosticSummary summary = this.summary(world.getId(), peon.getId(), peonEvents);
             PeonBehaviorAnalysisRequest request = new PeonBehaviorAnalysisRequest(this.worldContext(world, events), this.gameRules(), peon, peonEvents, summary);
             markdown.append("## ").append(peon.getFirstName()).append("\n\n");

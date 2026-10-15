@@ -35,6 +35,12 @@ public class World {
     private Map<UUID, Sheep> sheep = new LinkedHashMap<>();
     private Map<UUID, WheatField> wheatFields = new LinkedHashMap<>();
     private Map<UUID, Granary> granaries = new LinkedHashMap<>();
+    private transient Map<String, House> housesByPosition = Map.of();
+    private transient Map<String, WheatField> wheatFieldsByPosition = Map.of();
+    private transient Map<String, Granary> granariesByPosition = Map.of();
+    private transient int indexedHouseCount = -1;
+    private transient int indexedWheatFieldCount = -1;
+    private transient int indexedGranaryCount = -1;
 
     public World() {
     }
@@ -99,14 +105,14 @@ public class World {
     public void setGraves(Map<UUID, Grave> graves) {
         if (graves != null) { this.graves.putAll(graves); }
     }
-    public void setHouses(Map<UUID, House> value) { this.houses = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setHouses(Map<UUID, House> value) { this.houses = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); this.indexedHouseCount = -1; }
     public void setWoodBundles(Map<UUID, WoodBundle> value) { this.woodBundles = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public void setSheep(Map<UUID, Sheep> value) { this.sheep = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
-    public void setWheatFields(Map<UUID, WheatField> value) { this.wheatFields = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
-    public void setGranaries(Map<UUID, Granary> value) { this.granaries = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
-    public House houseAt(HexCoordinate coordinate) { return this.houses.values().stream().filter(house -> house.getPosition().equals(coordinate)).findFirst().orElse(null); }
-    public WheatField wheatFieldAt(HexCoordinate coordinate) { return this.wheatFields.values().stream().filter(field -> field.getPosition().equals(coordinate)).findFirst().orElse(null); }
-    public Granary granaryAt(HexCoordinate coordinate) { return this.granaries.values().stream().filter(granary -> granary.getPosition().equals(coordinate)).findFirst().orElse(null); }
+    public void setWheatFields(Map<UUID, WheatField> value) { this.wheatFields = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); this.indexedWheatFieldCount = -1; }
+    public void setGranaries(Map<UUID, Granary> value) { this.granaries = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); this.indexedGranaryCount = -1; }
+    public House houseAt(HexCoordinate coordinate) { this.refreshHouseIndex(); return this.housesByPosition.get(key(coordinate)); }
+    public WheatField wheatFieldAt(HexCoordinate coordinate) { this.refreshWheatFieldIndex(); return this.wheatFieldsByPosition.get(key(coordinate)); }
+    public Granary granaryAt(HexCoordinate coordinate) { this.refreshGranaryIndex(); return this.granariesByPosition.get(key(coordinate)); }
     public boolean hasAlliedGranaryWithin(HexCoordinate coordinate, UUID teamId, int maximumDistance) { return this.granaries.values().stream().anyMatch(granary -> granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance); }
     public Granary closestAlliedGranaryWithin(HexCoordinate coordinate, UUID teamId, int maximumDistance) { return this.granaries.values().stream().filter(granary -> granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance).min(java.util.Comparator.comparingInt(granary -> granary.getPosition().distanceTo(coordinate))).orElse(null); }
 
@@ -151,4 +157,28 @@ public class World {
     }
 
     public static String key(HexCoordinate coordinate) { return coordinate.q() + ":" + coordinate.r(); }
+
+    private void refreshHouseIndex() {
+        if (this.indexedHouseCount == this.houses.size()) { return; }
+        Map<String, House> index = new LinkedHashMap<>();
+        this.houses.values().forEach(house -> index.put(key(house.getPosition()), house));
+        this.housesByPosition = index;
+        this.indexedHouseCount = this.houses.size();
+    }
+
+    private void refreshWheatFieldIndex() {
+        if (this.indexedWheatFieldCount == this.wheatFields.size()) { return; }
+        Map<String, WheatField> index = new LinkedHashMap<>();
+        this.wheatFields.values().forEach(field -> index.put(key(field.getPosition()), field));
+        this.wheatFieldsByPosition = index;
+        this.indexedWheatFieldCount = this.wheatFields.size();
+    }
+
+    private void refreshGranaryIndex() {
+        if (this.indexedGranaryCount == this.granaries.size()) { return; }
+        Map<String, Granary> index = new LinkedHashMap<>();
+        this.granaries.values().forEach(granary -> index.put(key(granary.getPosition()), granary));
+        this.granariesByPosition = index;
+        this.indexedGranaryCount = this.granaries.size();
+    }
 }

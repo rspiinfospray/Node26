@@ -53,6 +53,7 @@ import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class Illuvatar {
@@ -65,6 +66,7 @@ public class Illuvatar {
     private final PeonFirstNameCatalog firstNameCatalog;
     private final GameDefaultsProperties defaults;
     private final PeonStrategyPlanner strategyPlanner = new PeonStrategyPlanner();
+    private final Map<UUID, Object> worldLocks = new ConcurrentHashMap<>();
 
     public Illuvatar(WorldRepository worldRepository, EventRepository eventRepository, ActionRequestPublisher actionRequestPublisher, DomainEventPublisher domainEventPublisher, PeonDecisionProvider decisionProvider, PeonFirstNameCatalog firstNameCatalog, GameDefaultsProperties defaults) {
         this.worldRepository = worldRepository;
@@ -99,68 +101,64 @@ public class Illuvatar {
         this.generateFood(world, traversableCells, random);
         this.generateSheep(world, traversableCells, random);
         this.generateTeamsAndPeons(world, request.teams(), traversableCells, random);
-        World saved = this.worldRepository.save(world);
-        this.worldRepository.saveSnapshot(world);
+        this.worldRepository.saveWithSnapshot(world);
         SimulationEvent event = SimulationEvent.of(null, "WORLD_CREATED", world.getId(), null, null, 0, 0, 0, Map.of("name", world.getName(), "width", world.getWidth(), "height", world.getHeight(), "peonCount", requestedPeons));
         this.eventRepository.appendAll(List.of(event));
         this.afterCommit(() -> this.domainEventPublisher.publish(List.of(event)));
-        return saved;
-    }
-
-    @Transactional
-    public synchronized World setStatus(UUID worldId, WorldStatus status) {
-        World world = this.getWorld(worldId);
-        if (world.getStatus() != WorldStatus.FINISHED) {
-            world.setStatus(status);
-            this.worldRepository.save(world);
-        }
         return world;
     }
 
     @Transactional
-    public synchronized World advance(UUID worldId, boolean manual) {
-        World world = this.getWorld(worldId);
-        if ((!manual && world.getStatus() != WorldStatus.RUNNING) || world.getStatus() == WorldStatus.FINISHED || world.getPendingActionId() != null) {
+    public World setStatus(UUID worldId, WorldStatus status) {
+        synchronized (this.lockFor(worldId)) {
+            World world = this.getWorld(worldId);
+            if (world.getStatus() != WorldStatus.FINISHED) {
+                world.setStatus(status);
+                this.worldRepository.save(world);
+            }
             return world;
         }
-        Peon actor = world.nextActor();
-        if (actor == null) {
+    }
+
+    @Transactional
+    public World advance(UUID worldId, boolean manual) {
+        synchronized (this.lockFor(worldId)) {
+            World world = this.getWorld(worldId);
+            if ((!manual && world.getStatus() != WorldStatus.RUNNING) || world.getStatus() == WorldStatus.FINISHED || world.getPendingActionId() != null) { return world; }
+            Peon actor = world.nextActor();
+            if (actor == null) { this.worldRepository.save(world); return world; }
+            long sequence = world.getSequenceNumber() + 1;
+            world.setSequenceNumber(sequence);
+            this.strategyPlanner.update(world, actor, this.defaults);
+            PeonDecisionContext context = this.buildDecisionContext(world, actor);
+            PeonDecision peonDecision = this.decisionProvider.decide(context);
+            PeonAction action = peonDecision.action();
+            actor.beginDecision(peonDecision.situationKey(), action.type());
+            UUID actionId = UUID.randomUUID();
+            world.setPendingActionId(actionId);
             this.worldRepository.save(world);
+            Map<String, Object> decisionPayload = new LinkedHashMap<>();
+            decisionPayload.put("actionType", action.type().name());
+            decisionPayload.put("purpose", action.purpose().name());
+            decisionPayload.put("reason", action.reason());
+            decisionPayload.put("situationKey", peonDecision.situationKey());
+            decisionPayload.put("selectedScore", peonDecision.selectedScore());
+            decisionPayload.put("explorationChoice", peonDecision.explorationChoice());
+            decisionPayload.put("candidates", peonDecision.candidates());
+            decisionPayload.put("longTermStrategy", actor.getLongTermStrategy());
+            if (action.destination() != null) { decisionPayload.put("destination", action.destination()); }
+            if (action.targetPeonId() != null) { decisionPayload.put("targetPeonId", action.targetPeonId()); }
+            SimulationEvent decision = SimulationEvent.of(actionId, "PEON_DECISION_MADE", world.getId(), actor.getTeamId(), actor.getId(), world.getCurrentRound(), sequence, 0, decisionPayload);
+            this.eventRepository.appendAll(List.of(decision));
+            ActionRequest actionRequest = new ActionRequest(actionId, world.getId(), actor.getId(), sequence, action);
+            this.afterCommit(() -> { this.domainEventPublisher.publish(List.of(decision)); this.actionRequestPublisher.publish(actionRequest); });
             return world;
         }
-        long sequence = world.getSequenceNumber() + 1;
-        world.setSequenceNumber(sequence);
-        this.strategyPlanner.update(world, actor, this.defaults);
-        PeonDecisionContext context = this.buildDecisionContext(world, actor);
-        PeonDecision peonDecision = this.decisionProvider.decide(context);
-        PeonAction action = peonDecision.action();
-        actor.beginDecision(peonDecision.situationKey(), action.type());
-        UUID actionId = UUID.randomUUID();
-        world.setPendingActionId(actionId);
-        this.worldRepository.save(world);
-        Map<String, Object> decisionPayload = new LinkedHashMap<>();
-        decisionPayload.put("actionType", action.type().name());
-        decisionPayload.put("purpose", action.purpose().name());
-        decisionPayload.put("reason", action.reason());
-        decisionPayload.put("situationKey", peonDecision.situationKey());
-        decisionPayload.put("selectedScore", peonDecision.selectedScore());
-        decisionPayload.put("explorationChoice", peonDecision.explorationChoice());
-        decisionPayload.put("candidates", peonDecision.candidates());
-        decisionPayload.put("longTermStrategy", actor.getLongTermStrategy());
-        if (action.destination() != null) { decisionPayload.put("destination", action.destination()); }
-        if (action.targetPeonId() != null) { decisionPayload.put("targetPeonId", action.targetPeonId()); }
-        SimulationEvent decision = SimulationEvent.of(actionId, "PEON_DECISION_MADE", world.getId(), actor.getTeamId(), actor.getId(), world.getCurrentRound(), sequence, 0, decisionPayload);
-        this.eventRepository.appendAll(List.of(decision));
-        ActionRequest actionRequest = new ActionRequest(actionId, world.getId(), actor.getId(), sequence, action);
-        this.afterCommit(() -> {
-            this.domainEventPublisher.publish(List.of(decision));
-            this.actionRequestPublisher.publish(actionRequest);
-        });
-        return this.getWorld(worldId);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public synchronized void processAction(ActionRequest request) {
+    public void processAction(ActionRequest request) {
+        synchronized (this.lockFor(request.worldId())) {
         if (this.eventRepository.actionWasProcessed(request.actionId())) {
             return;
         }
@@ -197,11 +195,11 @@ public class Illuvatar {
         if (world.getStatus() == WorldStatus.FINISHED) {
             events.add(this.event(world, request, actor, "WORLD_FINISHED", eventIndex, Map.of("reason", world.alivePeons().isEmpty() ? "NO_SURVIVORS" : "MAX_ROUNDS_REACHED")));
         }
-        this.worldRepository.save(world);
-        this.worldRepository.saveSnapshot(world);
+        this.worldRepository.saveWithSnapshot(world);
         this.eventRepository.appendAll(events);
         this.eventRepository.markActionProcessed(request.actionId());
         this.afterCommit(() -> this.domainEventPublisher.publish(events));
+        }
     }
 
     public World getWorld(UUID worldId) {
@@ -211,6 +209,7 @@ public class Illuvatar {
     public List<World> getWorlds() { return this.worldRepository.findAll(); }
     public World getWorldAtSequence(UUID worldId, long sequenceNumber) { return this.worldRepository.findAtSequence(worldId, sequenceNumber).orElseThrow(() -> new IllegalArgumentException("Aucun état historique pour la séquence " + sequenceNumber)); }
     public List<SimulationEvent> getEvents(UUID worldId) { return this.eventRepository.findByWorldId(worldId); }
+    private Object lockFor(UUID worldId) { return this.worldLocks.computeIfAbsent(worldId, ignored -> new Object()); }
     public PeonDecision replayDecision(UUID worldId, UUID peonId, long sequenceNumber) {
         World world = this.getWorldAtSequence(worldId, Math.max(0, sequenceNumber - 1));
         Peon peon = world.getPeons().get(peonId);

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 public class GetPeonDiagnosticCommand {
@@ -26,12 +27,13 @@ public class GetPeonDiagnosticCommand {
         Peon peon = world.getPeons().get(peonId);
         if (peon == null) { throw new IllegalArgumentException("Peon introuvable: " + peonId); }
         List<SimulationEvent> events = this.eventRepository.find(new EventQuery(worldId, 0, 2000, peonId, fromRound, toRound, Set.of()));
-        List<PeonDiagnosticResponse.Turn> turns = events.stream().filter(event -> event.eventType().equals("PEON_DECISION_MADE")).map(decision -> this.turn(decision, events)).toList();
+        Map<Long, List<SimulationEvent>> eventsBySequence = events.stream().collect(Collectors.groupingBy(SimulationEvent::sequenceNumber));
+        List<PeonDiagnosticResponse.Turn> turns = events.stream().filter(event -> event.eventType().equals("PEON_DECISION_MADE")).map(decision -> this.turn(decision, eventsBySequence.getOrDefault(decision.sequenceNumber(), List.of()))).toList();
         return new PeonDiagnosticResponse(worldId, world.getName(), peonId, peon.getFirstName(), turns);
     }
 
-    private PeonDiagnosticResponse.Turn turn(SimulationEvent decision, List<SimulationEvent> events) {
-        List<Map<String, Object>> outcomes = events.stream().filter(event -> event.sequenceNumber() == decision.sequenceNumber() && !event.eventType().equals("PEON_DECISION_MADE")).map(event -> Map.<String, Object>of("eventType", event.eventType(), "payload", event.payload())).toList();
+    private PeonDiagnosticResponse.Turn turn(SimulationEvent decision, List<SimulationEvent> sequenceEvents) {
+        List<Map<String, Object>> outcomes = sequenceEvents.stream().filter(event -> !event.eventType().equals("PEON_DECISION_MADE")).map(event -> Map.<String, Object>of("eventType", event.eventType(), "payload", event.payload())).toList();
         return new PeonDiagnosticResponse.Turn(decision.roundNumber(), decision.sequenceNumber(), decision.payload(), outcomes);
     }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.infospray.peonsimulator.application.port.secondary.WorldRepository;
 import org.infospray.peonsimulator.domain.model.World;
+import org.infospray.peonsimulator.domain.model.WorldStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -24,16 +25,30 @@ public class JdbcWorldRepository implements WorldRepository {
     @Override
     public World save(World world) {
         String json = this.write(world);
-        int updated = this.jdbcTemplate.update("UPDATE worlds SET status = ?, state_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", world.getStatus().name(), json, world.getId().toString());
-        if (updated == 0) {
-            this.jdbcTemplate.update("INSERT INTO worlds(id, status, state_json) VALUES (?, ?, ?)", world.getId().toString(), world.getStatus().name(), json);
-        }
+        this.saveCurrent(world, json);
         return world;
+    }
+
+    @Override
+    public World saveWithSnapshot(World world) {
+        String json = this.write(world);
+        this.saveCurrent(world, json);
+        this.saveSnapshot(world, json);
+        return world;
+    }
+
+    private void saveCurrent(World world, String json) {
+        int updated = this.jdbcTemplate.update("UPDATE worlds SET status = ?, state_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", world.getStatus().name(), json, world.getId().toString());
+        if (updated == 0) { this.jdbcTemplate.update("INSERT INTO worlds(id, status, state_json) VALUES (?, ?, ?)", world.getId().toString(), world.getStatus().name(), json); }
     }
 
     @Override
     public void saveSnapshot(World world) {
         String json = this.write(world);
+        this.saveSnapshot(world, json);
+    }
+
+    private void saveSnapshot(World world, String json) {
         int updated = this.jdbcTemplate.update("UPDATE world_snapshots SET state_json = ?, created_at = CURRENT_TIMESTAMP WHERE world_id = ? AND sequence_number = ?", json, world.getId().toString(), world.getSequenceNumber());
         if (updated == 0) { this.jdbcTemplate.update("INSERT INTO world_snapshots(world_id, sequence_number, state_json) VALUES (?, ?, ?)", world.getId().toString(), world.getSequenceNumber(), json); }
     }
@@ -53,6 +68,11 @@ public class JdbcWorldRepository implements WorldRepository {
     @Override
     public List<World> findAll() {
         return this.jdbcTemplate.query("SELECT state_json FROM worlds ORDER BY updated_at DESC", (resultSet, rowNumber) -> this.read(resultSet.getString(1)));
+    }
+
+    @Override
+    public List<UUID> findIdsByStatus(WorldStatus status) {
+        return this.jdbcTemplate.query("SELECT id FROM worlds WHERE status = ? ORDER BY updated_at", (resultSet, rowNumber) -> UUID.fromString(resultSet.getString(1)), status.name());
     }
 
     @Override

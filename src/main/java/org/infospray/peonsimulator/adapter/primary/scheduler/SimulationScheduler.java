@@ -1,8 +1,8 @@
 package org.infospray.peonsimulator.adapter.primary.scheduler;
 
 import org.infospray.peonsimulator.application.command.AdvanceWorldTurnCommand;
-import org.infospray.peonsimulator.application.Illuvatar;
 import org.infospray.peonsimulator.application.port.secondary.SimulationClock;
+import org.infospray.peonsimulator.application.port.secondary.WorldRepository;
 import org.infospray.peonsimulator.domain.model.WorldStatus;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
@@ -12,18 +12,18 @@ import java.time.Instant;
 
 @Component
 public class SimulationScheduler implements SchedulingConfigurer {
-    private final Illuvatar illuvatar;
+    private final WorldRepository worldRepository;
     private final AdvanceWorldTurnCommand advanceWorldTurnCommand;
     private final SimulationClock simulationClock;
 
-    public SimulationScheduler(Illuvatar illuvatar, AdvanceWorldTurnCommand advanceWorldTurnCommand, SimulationClock simulationClock) {
-        this.illuvatar = illuvatar;
+    public SimulationScheduler(WorldRepository worldRepository, AdvanceWorldTurnCommand advanceWorldTurnCommand, SimulationClock simulationClock) {
+        this.worldRepository = worldRepository;
         this.advanceWorldTurnCommand = advanceWorldTurnCommand;
         this.simulationClock = simulationClock;
     }
 
     public void advanceRunningWorlds() {
-        this.illuvatar.getWorlds().stream().filter(world -> world.getStatus() == WorldStatus.RUNNING).forEach(world -> this.advanceWorldTurnCommand.execute(world.getId(), false));
+        this.worldRepository.findIdsByStatus(WorldStatus.RUNNING).forEach(worldId -> this.advanceWorldTurnCommand.execute(worldId, false));
     }
 
     @Override
