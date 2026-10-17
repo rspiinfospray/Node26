@@ -618,6 +618,7 @@ En production, le scheduler doit être séparé logiquement des instances d'API,
 - La récolte transfère le blé vers le grenier allié disponible le plus proche. Un peon doit se trouver sur un grenier allié pour consommer une unité de blé, gagner 40 PV et 15 XP.
 - Le moteur de décision traite chaque grenier comme le centre d'une exploitation : il vise au minimum 3 champs, puis adapte la cible au nombre de peons vivants (`arrondi supérieur(peons / 2) + 1`). Il valorise les champs supplémentaires tant que la cible n'est pas atteinte et que le grenier n'est pas plein.
 - Chaque nouveau champ est rattaché durablement au grenier allié le plus proche dans le rayon autorisé. L'inspecteur du grenier affiche son équipe, son stock et cette exploitation, et relie visuellement le grenier à ses champs sur la carte.
+- Chaque maison possédée, champ et grenier exerce une influence sur toutes les cases situées à une distance hexagonale maximale de 2. Une équipe ne peut construire aucune maison, aucun champ et aucun grenier dans la zone d'influence d'une construction ennemie ; les constructions alliées ne se bloquent pas. La sélection d'une construction affiche cette zone sur la carte dans la couleur de son équipe.
 
 ## 16. Planification stratégique des peons
 

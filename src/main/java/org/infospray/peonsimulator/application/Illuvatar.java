@@ -364,7 +364,7 @@ public class Illuvatar {
         Map<UUID, RememberedCell> newestSheepMemories = new LinkedHashMap<>();
         peon.getMentalMap().values().forEach(memory -> memory.getRememberedSheepIds().forEach(sheepId -> { RememberedCell previous = newestSheepMemories.get(sheepId); if (previous == null || memory.getLastObservedAtSequence() > previous.getLastObservedAtSequence()) { newestSheepMemories.put(sheepId, memory); } }));
         List<HexCoordinate> knownSheepPositions = newestSheepMemories.values().stream().map(RememberedCell::getCoordinate).toList();
-        boolean buildable = current.getTerrain() == TerrainType.PLAIN && house == null && world.wheatFieldAt(peon.getPosition()) == null && world.granaryAt(peon.getPosition()) == null && sheepOnCurrentCell == 0 && current.getOccupantPeonIds().stream().allMatch(peon.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(peon.getPosition()));
+        boolean buildable = current.getTerrain() == TerrainType.PLAIN && house == null && world.wheatFieldAt(peon.getPosition()) == null && world.granaryAt(peon.getPosition()) == null && sheepOnCurrentCell == 0 && current.getOccupantPeonIds().stream().allMatch(peon.getId()::equals) && world.getGraves().values().stream().noneMatch(grave -> grave.position().equals(peon.getPosition())) && !world.isInsideEnemyConstructionInfluence(peon.getPosition(), peon.getTeamId(), this.defaults.getConstructionInfluenceRadius());
         int woodBundleQuantity = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(peon.getPosition())).mapToInt(WoodBundle::quantity).sum();
         int usefulCommunicationCount = (int) peon.getMentalMap().entrySet().stream().filter(entry -> alliedPeons.stream().anyMatch(ally -> ally.getMentalMap().get(entry.getKey()) == null || ally.getMentalMap().get(entry.getKey()).getLastObservedAtSequence() < entry.getValue().getLastObservedAtSequence())).count();
         int consecutiveCommunicationCount = 0;
@@ -531,6 +531,7 @@ public class Illuvatar {
         boolean gravePresent = world.getGraves().values().stream().anyMatch(grave -> grave.position().equals(actor.getPosition()));
         boolean sheepPresent = world.getSheep().values().stream().anyMatch(sheep -> sheep.getPosition().equals(actor.getPosition()));
         if (cell.getTerrain() != TerrainType.PLAIN || world.houseAt(actor.getPosition()) != null || world.wheatFieldAt(actor.getPosition()) != null || world.granaryAt(actor.getPosition()) != null || occupiedByOther || gravePresent || sheepPresent) { this.reject(world, actor, request, events, index, "INVALID_BUILD_SITE"); return; }
+        if (world.isInsideEnemyConstructionInfluence(actor.getPosition(), actor.getTeamId(), this.defaults.getConstructionInfluenceRadius())) { this.reject(world, actor, request, events, index, "ENEMY_CONSTRUCTION_INFLUENCE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForHouse())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         House house = new House(UUID.randomUUID(), actor.getPosition(), actor.getId());
         world.getHouses().put(house.getId(), house);
@@ -553,6 +554,7 @@ public class Illuvatar {
 
     private void buildField(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (!this.isFreeConstructionSite(world, actor)) { this.reject(world, actor, request, events, index, "INVALID_FIELD_SITE"); return; }
+        if (world.isInsideEnemyConstructionInfluence(actor.getPosition(), actor.getTeamId(), this.defaults.getConstructionInfluenceRadius())) { this.reject(world, actor, request, events, index, "ENEMY_CONSTRUCTION_INFLUENCE"); return; }
         Granary attachedGranary = world.closestAlliedGranaryWithin(actor.getPosition(), actor.getTeamId(), this.defaults.getFieldGranaryRadius());
         if (attachedGranary == null) { this.reject(world, actor, request, events, index, "NO_ALLIED_GRANARY_IN_RANGE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForField())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
@@ -564,6 +566,7 @@ public class Illuvatar {
 
     private void buildGranary(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (!this.isFreeConstructionSite(world, actor)) { this.reject(world, actor, request, events, index, "INVALID_GRANARY_SITE"); return; }
+        if (world.isInsideEnemyConstructionInfluence(actor.getPosition(), actor.getTeamId(), this.defaults.getConstructionInfluenceRadius())) { this.reject(world, actor, request, events, index, "ENEMY_CONSTRUCTION_INFLUENCE"); return; }
         boolean nearbyHouse = world.getHouses().values().stream().filter(house -> house.getPosition().distanceTo(actor.getPosition()) >= 1 && house.getPosition().distanceTo(actor.getPosition()) <= 2).flatMap(house -> house.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(actor.getTeamId()));
         if (!nearbyHouse) { this.reject(world, actor, request, events, index, "NO_ALLIED_HOUSE_NEARBY"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForGranary())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }

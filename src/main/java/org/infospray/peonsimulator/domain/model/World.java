@@ -115,6 +115,12 @@ public class World {
     public Granary granaryAt(HexCoordinate coordinate) { this.refreshGranaryIndex(); return this.granariesByPosition.get(key(coordinate)); }
     public boolean hasAlliedGranaryWithin(HexCoordinate coordinate, UUID teamId, int maximumDistance) { return this.granaries.values().stream().anyMatch(granary -> granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance); }
     public Granary closestAlliedGranaryWithin(HexCoordinate coordinate, UUID teamId, int maximumDistance) { return this.granaries.values().stream().filter(granary -> granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance).min(java.util.Comparator.comparingInt(granary -> granary.getPosition().distanceTo(coordinate))).orElse(null); }
+    public boolean isInsideEnemyConstructionInfluence(HexCoordinate coordinate, UUID teamId, int maximumDistance) {
+        boolean enemyFieldNearby = this.wheatFields.values().stream().anyMatch(field -> !field.getTeamId().equals(teamId) && field.getPosition().distanceTo(coordinate) <= maximumDistance);
+        boolean enemyGranaryNearby = this.granaries.values().stream().anyMatch(granary -> !granary.getTeamId().equals(teamId) && granary.getPosition().distanceTo(coordinate) <= maximumDistance);
+        boolean enemyHouseNearby = this.houses.values().stream().anyMatch(house -> { Peon host = this.peons.get(house.getHostPeonId()); return host != null && !host.getTeamId().equals(teamId) && house.getPosition().distanceTo(coordinate) <= maximumDistance; });
+        return enemyFieldNearby || enemyGranaryNearby || enemyHouseNearby;
+    }
 
     public Cell cell(HexCoordinate coordinate) { return this.cells.get(key(coordinate)); }
     public boolean contains(HexCoordinate coordinate) { return this.cells.containsKey(key(coordinate)); }

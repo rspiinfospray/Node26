@@ -89,7 +89,7 @@
                 <code id="peonId"></code>
             </div>
             <div id="houseDetails" hidden>
-                <div class="identity"><div class="avatar house-avatar"></div><div><h2>Maison en bois</h2><p id="houseStatus"></p></div></div>
+                <div class="identity"><div class="avatar house-avatar"></div><div><h2>Maison en bois</h2><p id="houseTeam"></p><p id="houseStatus"></p></div></div>
                 <dl><div><dt>Position</dt><dd id="housePosition"></dd></div><div><dt>Propriétaires</dt><dd id="houseHost"></dd></div><div><dt>Occupants</dt><dd id="houseOccupantCount"></dd></div></dl>
                 <div class="peon-actions"><div class="section-heading"><p class="section-label">À L’INTÉRIEUR</p></div><div id="houseOccupants" class="house-occupants"></div></div>
                 <code id="houseId"></code>
@@ -99,6 +99,11 @@
                 <dl><div><dt>Position</dt><dd id="granaryPosition"></dd></div><div><dt>Stock de blé</dt><dd id="granaryStock"></dd></div><div><dt>Champs rattachés</dt><dd id="granaryFieldCount"></dd></div></dl>
                 <div class="peon-actions"><div class="section-heading"><p class="section-label">EXPLOITATION · RAYON 4</p></div><div id="granaryFields" class="granary-fields"></div></div>
                 <code id="granaryId"></code>
+            </div>
+            <div id="fieldDetails" hidden>
+                <div class="identity"><div class="avatar field-avatar"></div><div><h2>Champ</h2><p id="fieldTeam"></p></div></div>
+                <dl><div><dt>Position</dt><dd id="fieldPosition"></dd></div><div><dt>Stock de blé</dt><dd id="fieldStock"></dd></div><div><dt>Zone d’influence</dt><dd id="fieldInfluence"></dd></div></dl>
+                <code id="fieldId"></code>
             </div>
             <button id="openWorldJournalButton" class="button journal-button" type="button">Ouvrir le journal du monde <span id="eventCount">0</span></button>
         </section>
