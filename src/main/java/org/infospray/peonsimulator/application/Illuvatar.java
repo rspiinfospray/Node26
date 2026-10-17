@@ -608,6 +608,10 @@ public class Illuvatar {
     private void buildBridge(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         HexCoordinate destination = request.action().destination();
         if (destination == null || actor.getPosition().distanceTo(destination) != 1 || !world.contains(destination) || world.cell(destination).getTerrain() != TerrainType.RIVER) { this.reject(world, actor, request, events, index, "INVALID_BRIDGE_SITE"); return; }
+        HexCoordinate oppositeBank = new HexCoordinate(destination.q() + destination.q() - actor.getPosition().q(), destination.r() + destination.r() - actor.getPosition().r());
+        if (world.contains(oppositeBank) && world.cell(oppositeBank).getTerrain() == TerrainType.ROCK) { this.reject(world, actor, request, events, index, "BRIDGE_EXIT_BLOCKED_BY_ROCK"); return; }
+        boolean bridgeVisible = this.visibleCoordinates(world, actor).stream().anyMatch(coordinate -> world.cell(coordinate).getTerrain() == TerrainType.BRIDGE);
+        if (bridgeVisible) { this.reject(world, actor, request, events, index, "BRIDGE_ALREADY_VISIBLE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForBridge())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         world.cell(destination).setTerrain(TerrainType.BRIDGE);
         events.add(this.event(world, request, actor, "BRIDGE_BUILT", index, Map.of("position", destination, "woodSpent", this.defaults.getWoodRequiredForBridge(), "woodAfter", actor.itemCount(ItemType.WOOD))));
