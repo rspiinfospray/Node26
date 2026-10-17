@@ -63,7 +63,7 @@
     <aside class="side-panel">
         <section class="panel inspector">
             <p id="inspectorTitle" class="section-label">PEON SÉLECTIONNÉ</p>
-            <div id="peonEmpty" class="muted">Cliquez sur un peon, une maison ou un grenier pour l’inspecter.</div>
+            <div id="peonEmpty" class="muted">Cliquez sur un peon, une construction ou des baies pour l’inspecter.</div>
             <div id="peonDetails" hidden>
                 <div class="identity"><div id="peonAvatar" class="avatar"></div><div><h2 id="peonName"></h2><p id="peonTeam"></p></div></div>
                 <div class="meter-row"><span>PV</span><div class="meter"><i id="healthBar"></i></div><strong id="healthValue"></strong></div>
@@ -104,6 +104,10 @@
                 <div class="identity"><div class="avatar field-avatar"></div><div><h2>Champ</h2><p id="fieldTeam"></p></div></div>
                 <dl><div><dt>Position</dt><dd id="fieldPosition"></dd></div><div><dt>Stock de blé</dt><dd id="fieldStock"></dd></div><div><dt>Zone d’influence</dt><dd id="fieldInfluence"></dd></div></dl>
                 <code id="fieldId"></code>
+            </div>
+            <div id="foodDetails" hidden>
+                <div class="identity"><div class="avatar food-avatar"></div><div><h2>Baies</h2><p>Ressource alimentaire</p></div></div>
+                <dl><div><dt>Position</dt><dd id="foodPosition"></dd></div><div><dt>Quantité présente</dt><dd id="foodQuantity"></dd></div></dl>
             </div>
             <button id="openWorldJournalButton" class="button journal-button" type="button">Ouvrir le journal du monde <span id="eventCount">0</span></button>
         </section>

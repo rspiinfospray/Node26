@@ -1,4 +1,4 @@
-const state = { worlds: [], world: null, liveWorld: null, events: [], selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, selectedFieldId: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, liveWorldNeedsResync: false, mentalMapsStale: false, lastCompletedSequence: 0, events: [], selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, selectedFieldId: null, selectedFoodKey: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const viewport = $('#worldViewport');
 const pixiApp = new PIXI.Application();
@@ -8,17 +8,102 @@ const canvas = pixiApp.canvas;
 pixiApp.stage.sortableChildren = true;
 const assetVersion = '20261017-river-tiles2';
 const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass-flat.png', river:'/assets/terrain-river.png', bridge:'/assets/terrain-bridge.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field-flat.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(`${source}?v=${assetVersion}`)])));
-const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
+const animationState = { peons:new Map(), animations:[], visualQueue:[], processingBatch:false, currentSpeedFactor:1, frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
+const sceneState = { worldId:null, layoutKey:null, terrainKey:null, terrainLayer:null, objectLayer:null };
+const geometryCache = new Map();
+let activeLayer = pixiApp.stage;
+let cameraRenderFrame = null;
+let currentTextResolution = null;
+
+function addDisplayObject(...children) { activeLayer.addChild(...children); }
+
+function drawCachedObject(key, signature, zIndex, draw) {
+    const existing = sceneState.reusableEntities?.get(key);
+    sceneState.usedEntities.add(key);
+    if (existing?.entitySignature === signature) { return existing; }
+    if (existing?.parent) { existing.parent.removeChild(existing); existing.destroy({ children:true }); }
+    const container = new PIXI.Container();
+    container.sortableChildren = true;
+    container.entityKey = key;
+    container.entitySignature = signature;
+    container.zIndex = zIndex;
+    sceneState.objectLayer.addChild(container);
+    const previousLayer = activeLayer;
+    activeLayer = container;
+    draw();
+    activeLayer = previousLayer;
+    return container;
+}
+
+function createSceneLayers() {
+    pixiApp.stage.removeChildren().forEach(child => child.destroy({ children:true }));
+    sceneState.terrainLayer = new PIXI.Container();
+    sceneState.objectLayer = new PIXI.Container();
+    sceneState.terrainLayer.sortableChildren = true;
+    sceneState.objectLayer.sortableChildren = true;
+    sceneState.terrainLayer.zIndex = 0;
+    sceneState.objectLayer.zIndex = 1;
+    pixiApp.stage.addChild(sceneState.terrainLayer, sceneState.objectLayer);
+}
 
 function resetView() {
     state.zoom = state.defaultZoom; state.panX = 0; state.panY = 0;
     if ($('#zoomValue')) $('#zoomValue').textContent = `${Math.round(state.zoom * 100)}%`;
 }
 
-function changeZoom(delta) {
-    state.zoom = Math.max(1, Math.min(8, state.zoom + delta));
+function cameraPosition(zoom = state.zoom) {
+    const rect = viewport.getBoundingClientRect();
+    return { x:rect.width * (1 - zoom) / 2 + state.panX, y:rect.height * (1 - zoom) / 2 + state.panY };
+}
+
+function scheduleCameraRender() {
+    if (cameraRenderFrame !== null) return;
+    cameraRenderFrame = requestAnimationFrame(() => { cameraRenderFrame = null; pixiApp.render(); });
+}
+
+function desiredTextResolution() { return Math.min(8, Math.max(pixiApp.renderer.resolution, Math.ceil(state.zoom * pixiApp.renderer.resolution))); }
+
+function createText(text, style) { return new PIXI.Text({ text, style, resolution:desiredTextResolution() }); }
+
+function updateTextResolution() {
+    const resolution = desiredTextResolution();
+    if (resolution === currentTextResolution) return;
+    const pending = [...pixiApp.stage.children];
+    while (pending.length) {
+        const displayObject = pending.pop();
+        if (displayObject instanceof PIXI.Text) displayObject.resolution = resolution;
+        if (displayObject.children?.length) pending.push(...displayObject.children);
+    }
+    currentTextResolution = resolution;
+}
+
+function applyCameraTransform(render = true) {
+    const position = cameraPosition();
+    pixiApp.stage.scale.set(state.zoom);
+    pixiApp.stage.position.set(position.x, position.y);
+    updateTextResolution();
+    if (render) scheduleCameraRender();
+}
+
+function screenToWorld(point) {
+    const position = cameraPosition();
+    return { x:(point.x - position.x) / state.zoom, y:(point.y - position.y) / state.zoom };
+}
+
+function changeZoom(delta, anchor) {
+    const oldZoom = state.zoom;
+    const newZoom = Math.max(1, Math.min(8, oldZoom + delta));
+    if (newZoom === oldZoom) return;
+    const rect = viewport.getBoundingClientRect();
+    const focus = anchor || { x:rect.width / 2, y:rect.height / 2 };
+    const oldPosition = cameraPosition(oldZoom);
+    const worldFocus = { x:(focus.x - oldPosition.x) / oldZoom, y:(focus.y - oldPosition.y) / oldZoom };
+    const newPosition = { x:focus.x - worldFocus.x * newZoom, y:focus.y - worldFocus.y * newZoom };
+    state.zoom = newZoom;
+    state.panX = newPosition.x - rect.width * (1 - newZoom) / 2;
+    state.panY = newPosition.y - rect.height * (1 - newZoom) / 2;
     $('#zoomValue').textContent = `${Math.round(state.zoom * 100)}%`;
-    drawWorld();
+    applyCameraTransform();
 }
 
 async function api(path, options = {}) {
@@ -76,11 +161,15 @@ async function selectWorld(worldId) {
     state.world = state.liveWorld;
     state.events = await api(`/api/worlds/${worldId}/events?limit=500`);
     state.historical = false;
+    state.liveWorldNeedsResync = false;
+    state.mentalMapsStale = false;
+    state.lastCompletedSequence = state.liveWorld.pendingActionId ? Math.max(0, state.liveWorld.sequenceNumber - 1) : state.liveWorld.sequenceNumber;
     resetView();
     state.selectedPeonId = Object.values(state.world.peons).find(peon => peon.alive)?.id || null;
     state.selectedHouseId = null;
     state.selectedGranaryId = null;
     state.selectedFieldId = null;
+    state.selectedFoodKey = null;
     connectStream(worldId);
     render();
 }
@@ -91,14 +180,78 @@ function connectStream(worldId) {
         const data = JSON.parse(event.data);
         state.events.push(data);
         if (state.events.length > 500) state.events.shift();
+        if (data.sequenceNumber > state.lastCompletedSequence + 1) state.liveWorldNeedsResync = true;
+        if (!state.liveWorldNeedsResync) applyWorldEvent(state.liveWorld, data);
         if (['PEON_TURN_COMPLETED', 'WORLD_FINISHED'].includes(data.eventType)) {
-            state.liveWorld = await api(`/api/worlds/${worldId}`);
+            if (state.liveWorldNeedsResync) await resynchronizeLiveWorld(worldId);
+            if (data.eventType === 'PEON_TURN_COMPLETED') state.lastCompletedSequence = data.sequenceNumber;
             if (!state.historical) state.world = state.liveWorld;
             render();
-            if (!state.historical && data.eventType === 'PEON_TURN_COMPLETED') playActionAnimations(state.events.filter(item => item.sequenceNumber === data.sequenceNumber));
+            if (!state.historical && data.eventType === 'PEON_TURN_COMPLETED') enqueueActionAnimations(state.events.filter(item => item.sequenceNumber === data.sequenceNumber));
             return;
         }
     });
+}
+
+async function resynchronizeLiveWorld(worldId) {
+    state.liveWorld = await api(`/api/worlds/${worldId}`);
+    state.liveWorldNeedsResync = false;
+    state.mentalMapsStale = false;
+    state.lastCompletedSequence = state.liveWorld.sequenceNumber;
+}
+
+function worldCell(world, position) { return position ? world?.cells?.[`${position.q}:${position.r}`] : null; }
+function worldPeon(world, peonId) { return peonId ? world?.peons?.[peonId] : null; }
+function setInventory(peon, type, quantity) { if (peon) { peon.inventory ||= {}; peon.inventory[type] = Math.max(0, quantity); } }
+function removeOccupant(cell, peonId) { if (cell?.occupantPeonIds) cell.occupantPeonIds = cell.occupantPeonIds.filter(id => id !== peonId); }
+function addOccupant(cell, peonId) { if (cell && !cell.occupantPeonIds?.includes(peonId)) cell.occupantPeonIds = [...(cell.occupantPeonIds || []), peonId]; }
+
+function applyWorldEvent(world, event) {
+    if (!world) return;
+    const payload = event.payload || {};
+    const actor = worldPeon(world, event.peonId);
+    world.sequenceNumber = Math.max(world.sequenceNumber || 0, event.sequenceNumber || 0);
+    switch (event.eventType) {
+        case 'PEON_DECISION_MADE':
+            world.pendingActionId = event.actionId; if (actor) actor.longTermStrategy = payload.longTermStrategy || actor.longTermStrategy; break;
+        case 'PEON_MOVED':
+            removeOccupant(worldCell(world, payload.from), event.peonId); addOccupant(worldCell(world, payload.to), event.peonId); if (actor) actor.position = payload.to; break;
+        case 'PEON_MOVEMENT_COST_APPLIED': case 'PEON_HUNGER_APPLIED': case 'PEON_LEVEL_UP_HEAL_APPLIED':
+            if (actor) { actor.healthPoints = payload.healthAfter; actor.alive = payload.healthAfter > 0; } break;
+        case 'PEON_ATE': case 'SHEEP_EATEN': case 'WHEAT_EATEN':
+            if (actor) { actor.healthPoints = payload.healthAfter; setInventory(actor, 'FOOD', payload.foodInventory); }
+            if (event.eventType === 'SHEEP_EATEN') delete world.sheep?.[payload.sheepId];
+            if (event.eventType === 'WHEAT_EATEN' && world.granaries?.[payload.granaryId]) world.granaries[payload.granaryId].wheatQuantity = payload.storedWheat;
+            break;
+        case 'FOOD_CONSUMED': { const cell = worldCell(world, payload.position); if (cell) cell.foodQuantity = payload.quantityAfter; break; }
+        case 'STORED_FOOD_EATEN': if (actor) { actor.healthPoints = payload.healthAfter; setInventory(actor, 'FOOD', payload.foodInventory); } break;
+        case 'FOOD_GIVEN': { const recipient = worldPeon(world, payload.recipientPeonId); setInventory(actor, 'FOOD', payload.giverFoodAfter); setInventory(recipient, 'FOOD', payload.recipientFoodAfter); break; }
+        case 'FOOD_REQUEST_ACCEPTED': { const requester = worldPeon(world, payload.requesterPeonId); setInventory(actor, 'FOOD', payload.donorFoodAfter); setInventory(requester, 'FOOD', payload.requesterFoodAfter); break; }
+        case 'RESOURCE_TRADE_COMPLETED': { const partner = worldPeon(world, payload.partnerPeonId); setInventory(actor, 'FOOD', payload.actorFoodAfter); setInventory(actor, 'WOOD', payload.actorWoodAfter); setInventory(partner, 'FOOD', payload.partnerFoodAfter); setInventory(partner, 'WOOD', payload.partnerWoodAfter); break; }
+        case 'PEON_CHOPPED_WOOD': { const cell = worldCell(world, payload.position); if (cell) cell.treeHealthPoints = payload.treeHealthAfter; setInventory(actor, 'WOOD', payload.woodAfter); break; }
+        case 'TREE_CUT_DOWN': { const cell = worldCell(world, payload.position); if (cell) { cell.terrain = 'PLAIN'; cell.treeHealthPoints = 0; } break; }
+        case 'BRIDGE_BUILT': { const cell = worldCell(world, payload.position); if (cell) cell.terrain = 'BRIDGE'; setInventory(actor, 'WOOD', payload.woodAfter); break; }
+        case 'HOUSE_BUILT': world.houses[payload.houseId] = { id:payload.houseId, position:payload.position, hostPeonId:event.peonId, ownerPeonIds:[event.peonId], occupantPeonIds:[event.peonId] }; setInventory(actor, 'WOOD', payload.woodAfter); break;
+        case 'FIELD_BUILT': world.wheatFields[payload.fieldId] = { id:payload.fieldId, teamId:event.teamId, position:payload.position, granaryId:payload.granaryId, readyAtRound:payload.readyAtRound, wheatQuantity:0 }; setInventory(actor, 'WOOD', payload.woodAfter); break;
+        case 'GRANARY_BUILT': world.granaries[payload.granaryId] = { id:payload.granaryId, teamId:event.teamId, position:payload.position, wheatQuantity:0 }; setInventory(actor, 'WOOD', payload.woodAfter); break;
+        case 'FIELD_RIPENED': if (world.wheatFields?.[payload.fieldId]) world.wheatFields[payload.fieldId].wheatQuantity = payload.wheatQuantity; break;
+        case 'WHEAT_HARVESTED': if (world.wheatFields?.[payload.fieldId]) { world.wheatFields[payload.fieldId].wheatQuantity = payload.fieldWheatAfter; world.wheatFields[payload.fieldId].readyAtRound = payload.fieldReadyAtRound; } if (world.granaries?.[payload.granaryId]) world.granaries[payload.granaryId].wheatQuantity = payload.storedWheat; break;
+        case 'WOOD_LOOTED': { const bundles = Object.values(world.woodBundles || {}).filter(bundle => bundle.position.q === payload.position.q && bundle.position.r === payload.position.r); const remaining = Math.max(0, bundles.reduce((sum, bundle) => sum + bundle.quantity, 0) - payload.woodCollected); bundles.forEach(bundle => delete world.woodBundles[bundle.id]); if (remaining) { const id = `remainder:${event.sequenceNumber}:${event.eventIndex}`; world.woodBundles[id] = { id, position:payload.position, quantity:remaining }; } setInventory(actor, 'WOOD', payload.woodAfter); break; }
+        case 'WOOD_DROPPED': world.woodBundles[payload.bundleId] = { id:payload.bundleId, position:payload.position, quantity:payload.woodQuantity }; setInventory(actor, 'WOOD', 0); break;
+        case 'SHEEP_MOVED': if (world.sheep?.[payload.sheepId]) world.sheep[payload.sheepId].position = payload.to; break;
+        case 'PEON_ATTACKED': { const target = worldPeon(world, payload.targetPeonId); if (target) { target.healthPoints = payload.healthAfter; target.alive = payload.healthAfter > 0; } break; }
+        case 'PEON_EXPERIENCE_GAINED': if (actor) actor.experiencePoints = payload.experienceAfter; break;
+        case 'PEON_LEVELED_UP': if (actor) { actor.level = payload.levelAfter; actor.healthPoints = payload.healthAfter; actor.maxHealthPoints = payload.maxHealthAfter; actor.attackDamage = payload.attackDamageAfter; } break;
+        case 'PEON_LEARNED': if (actor) { const key = `${payload.situationKey}|${payload.actionType}`; actor.learnedActions ||= {}; const previous = actor.learnedActions[key] || { attempts:0, successes:0, failures:0 }; actor.learnedActions[key] = { expectedReward:payload.expectedReward, attempts:previous.attempts + 1, successes:previous.successes + (payload.reward >= 0 ? 1 : 0), failures:previous.failures + (payload.reward < 0 ? 1 : 0) }; actor.actionHistory ||= []; actor.actionHistory.push({ sequenceNumber:event.sequenceNumber, actionType:payload.actionType, situationKey:payload.situationKey, reward:payload.reward, healthDelta:payload.healthDelta, experienceDelta:payload.experienceDelta, knownCellsDelta:payload.knownCellsDelta, rejected:payload.rejected, survived:payload.survived }); if (actor.actionHistory.length > 100) actor.actionHistory.shift(); actor.pendingSituationKey = null; actor.pendingDecisionAction = null; break; }
+        case 'PEON_DIED': if (actor) { actor.alive = false; actor.healthPoints = 0; actor.insideHouseId = null; removeOccupant(worldCell(world, actor.position), actor.id); world.graves[actor.id] = { peonId:actor.id, position:payload.position, deathRound:event.roundNumber, deathSequence:event.sequenceNumber }; Object.values(world.houses || {}).forEach(house => { house.ownerPeonIds = (house.ownerPeonIds || []).filter(id => id !== actor.id); house.occupantPeonIds = (house.occupantPeonIds || []).filter(id => id !== actor.id); if (house.hostPeonId === actor.id) house.hostPeonId = house.ownerPeonIds[0] || null; }); } break;
+        case 'PEON_ENTERED_HOUSE': if (actor) { actor.insideHouseId = payload.houseId; const house = world.houses?.[payload.houseId]; if (house && !house.occupantPeonIds?.includes(actor.id)) house.occupantPeonIds = [...(house.occupantPeonIds || []), actor.id]; } break;
+        case 'PEON_LEFT_HOUSE': if (actor) { actor.insideHouseId = null; const house = world.houses?.[payload.houseId]; if (house) house.occupantPeonIds = (house.occupantPeonIds || []).filter(id => id !== actor.id); } break;
+        case 'HOUSE_CLAIMED': { const house = world.houses?.[payload.houseId]; if (house) { house.hostPeonId = event.peonId; house.ownerPeonIds = [event.peonId]; house.occupantPeonIds = [event.peonId]; } break; }
+        case 'HOUSE_ENTRY_INVITED': { const house = world.houses?.[payload.houseId]; if (house) { house.ownerPeonIds = [...new Set([...(house.ownerPeonIds || []), payload.guestPeonId])]; } break; }
+        case 'PEON_SAW': case 'PEON_COMMUNICATED': state.mentalMapsStale = true; break;
+        case 'PEON_TURN_COMPLETED': world.currentRound = payload.nextRound; world.status = payload.worldStatus; world.pendingActionId = null; break;
+        case 'WORLD_FINISHED': world.status = 'FINISHED'; world.pendingActionId = null; break;
+    }
 }
 
 function closeStream() { if (state.source) state.source.close(); state.source = null; }
@@ -106,6 +259,8 @@ function closeStream() { if (state.source) state.source.close(); state.source = 
 async function changeStatus(action) {
     if (!state.liveWorld) return;
     state.liveWorld = await api(`/api/worlds/${state.liveWorld.id}/${action}`, { method: 'POST' });
+    state.liveWorldNeedsResync = false;
+    state.mentalMapsStale = false;
     if (!state.historical) state.world = state.liveWorld;
     render();
 }
@@ -221,76 +376,123 @@ function resizeRenderer() {
 function clearWorldStage() {
     cancelAnimations();
     pixiApp.stage.removeChildren().forEach(child => child.destroy({ children:true }));
+    sceneState.worldId = null; sceneState.layoutKey = null; sceneState.terrainKey = null; sceneState.terrainLayer = null; sceneState.objectLayer = null;
     pixiApp.render();
 }
 
 function cancelAnimations() {
     animationState.generation++;
     animationState.animations = [];
+    animationState.visualQueue = [];
+    animationState.processingBatch = false;
+    animationState.currentSpeedFactor = 1;
     animationState.peons.clear();
     if (animationState.frame !== null) cancelAnimationFrame(animationState.frame);
     animationState.frame = null;
 }
 
 function geometry(world, rect) {
-    const sqrt3 = Math.sqrt(3);
     const availableWidth = rect.width - 40;
     const availableHeight = rect.height - 40;
-    const coordinates = Object.values(world.cells).map(cell => cell.coordinate);
-    const projected = coordinates.map(coordinate => projectIsometric(1.5 * coordinate.q, sqrt3 * (coordinate.r + coordinate.q / 2)));
-    const rawX = projected.map(point => point.x);
-    const rawY = projected.map(point => point.y);
-    const bounds = { minX:Math.min(...rawX), maxX:Math.max(...rawX), minY:Math.min(...rawY), maxY:Math.max(...rawY) };
+    const basis = geometryBasis(world);
+    const bounds = basis.bounds;
     const byWidth = availableWidth / (bounds.maxX - bounds.minX + 2.5);
     const byHeight = availableHeight / (bounds.maxY - bounds.minY + 2.2);
-    const size = Math.max(2, Math.min(18, byWidth, byHeight)) * state.zoom;
+    const size = Math.max(2, Math.min(18, byWidth, byHeight));
     const mapWidth = size * (bounds.maxX - bounds.minX);
     const mapHeight = size * (bounds.maxY - bounds.minY);
-    return { size, depth:Math.max(2, size * .24), offsetX:(rect.width-mapWidth)/2-bounds.minX*size+state.panX, offsetY:(rect.height-mapHeight)/2-bounds.minY*size+state.panY };
+    return { size, depth:Math.max(2, size * .24), offsetX:(rect.width-mapWidth)/2-bounds.minX*size, offsetY:(rect.height-mapHeight)/2-bounds.minY*size, projectedByCell:basis.projectedByCell };
+}
+
+function geometryBasis(world) {
+    const topologyKey = `${world.id}|${world.width}|${world.height}|${Object.keys(world.cells).length}`;
+    const cached = geometryCache.get(topologyKey);
+    if (cached) return cached;
+    const projectedByCell = new Map();
+    const rawX = [];
+    const rawY = [];
+    Object.values(world.cells).forEach(cell => {
+        const coordinate = cell.coordinate;
+        const point = projectIsometric(1.5 * coordinate.q, Math.sqrt(3) * (coordinate.r + coordinate.q / 2));
+        projectedByCell.set(`${coordinate.q}:${coordinate.r}`, point);
+        rawX.push(point.x);
+        rawY.push(point.y);
+    });
+    const basis = { projectedByCell, bounds:{ minX:Math.min(...rawX), maxX:Math.max(...rawX), minY:Math.min(...rawY), maxY:Math.max(...rawY) } };
+    geometryCache.set(topologyKey, basis);
+    return basis;
 }
 
 function projectIsometric(x, y) { const axialScale = 1 / Math.sqrt(3); return { x:x - y * axialScale, y:(x * axialScale + y) * .68 }; }
-function centerOf(coordinate, geo) { const point = projectIsometric(1.5 * coordinate.q, Math.sqrt(3) * (coordinate.r + coordinate.q / 2)); return { x:geo.offsetX + geo.size * point.x, y:geo.offsetY + geo.size * point.y }; }
+function centerOf(coordinate, geo) { const point = geo.projectedByCell.get(`${coordinate.q}:${coordinate.r}`) || projectIsometric(1.5 * coordinate.q, Math.sqrt(3) * (coordinate.r + coordinate.q / 2)); return { x:geo.offsetX + geo.size * point.x, y:geo.offsetY + geo.size * point.y }; }
 function hexPoints(size) { return Array.from({ length:6 }, (_, index) => { const angle = Math.PI / 3 * index; const point = projectIsometric(Math.cos(angle), Math.sin(angle)); return [size * point.x, size * point.y]; }).flat(); }
 function objectDepth(point, offset = 0) { return 100000 + point.y + offset; }
+const depthPriority = { terrainFeature:0, construction:1, grave:2, food:3, wood:4, sheep:5, peon:6, effect:20 };
 function drawGroundShadow(point, geo, width, alpha = .26) {
     const shadow = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .18, width, Math.max(2, width * .28)).fill({ color:'#000000', alpha });
     shadow.zIndex = objectDepth(point, -2);
-    pixiApp.stage.addChild(shadow);
+    addDisplayObject(shadow);
 }
 
 function drawWorld() {
     const world = state.world;
     const rect = resizeRenderer();
-    cancelAnimations();
-    pixiApp.stage.removeChildren().forEach(child => child.destroy({ children:true }));
     if (!world) { pixiApp.render(); return; }
     const geo = geometry(world, rect);
     const selected = world.peons[state.selectedPeonId];
     const mental = !state.selectedHouseId && !state.selectedGranaryId && !state.selectedFieldId && $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
+    const mentalOwner = mental ? selected.id : 'omniscient';
+    const layoutKey = [world.id, Math.round(rect.width), Math.round(rect.height), state.historical].join('|');
+    const layoutChanged = sceneState.worldId !== world.id || sceneState.layoutKey !== layoutKey || !sceneState.terrainLayer || !sceneState.objectLayer;
+    if (layoutChanged) {
+        cancelAnimations();
+        createSceneLayers();
+        sceneState.worldId = world.id;
+        sceneState.layoutKey = layoutKey;
+        sceneState.terrainKey = null;
+    }
     const visibleWoodBundles = [];
     const visibleTerrainFeatures = [];
     const cellCoordinates = new Set(Object.values(world.cells).map(cell => `${cell.coordinate.q}:${cell.coordinate.r}`));
-    Object.values(world.cells).forEach(cell => {
+    const woodByPosition = new Map();
+    Object.values(world.woodBundles || {}).forEach(bundle => { const key = `${bundle.position.q}:${bundle.position.r}`; woodByPosition.set(key, (woodByPosition.get(key) || 0) + bundle.quantity); });
+    const renderedCells = Object.values(world.cells).map(cell => {
         const known = !mental || mental[`${cell.coordinate.q}:${cell.coordinate.r}`];
-        const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, woodBundleQuantity:known.rememberedWoodBundleQuantity || 0, occupantPeonIds: known.rememberedOccupants } : { ...cell, woodBundleQuantity:Object.values(world.woodBundles || {}).filter(bundle => bundle.position.q === cell.coordinate.q && bundle.position.r === cell.coordinate.r).reduce((sum, bundle) => sum + bundle.quantity, 0) };
+        const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, woodBundleQuantity:known.rememberedWoodBundleQuantity || 0, occupantPeonIds: known.rememberedOccupants } : { ...cell, woodBundleQuantity:woodByPosition.get(`${cell.coordinate.q}:${cell.coordinate.r}`) || 0 };
+        return { cell, known, rendered };
+    });
+    const terrainKey = `${layoutKey}|${mentalOwner}|${renderedCells.map(({ cell, known, rendered }) => `${cell.coordinate.q}:${cell.coordinate.r}:${known ? rendered.terrain : '?'}`).join(';')}`;
+    if (sceneState.terrainKey !== terrainKey) {
+        sceneState.terrainLayer.removeChildren().forEach(child => child.destroy({ children:true }));
+        activeLayer = sceneState.terrainLayer;
+        renderedCells.forEach(({ cell, known, rendered }) => drawCell(rendered, centerOf(cell.coordinate, geo), geo, Boolean(known), cellCoordinates));
+        sceneState.terrainKey = terrainKey;
+    }
+    const reusablePeons = !layoutChanged && !mental ? new Map([...animationState.peons].filter(([, container]) => container.parent === sceneState.objectLayer)) : new Map();
+    sceneState.reusableEntities = layoutChanged ? new Map() : new Map(sceneState.objectLayer.children.filter(child => child.entityKey).map(child => [child.entityKey, child]));
+    reusablePeons.forEach((container, peonId) => sceneState.reusableEntities.set(`peon:${peonId}`, container));
+    sceneState.usedEntities = new Set();
+    sceneState.objectLayer.removeChildren().forEach(child => {
+        if (child.entityKey && sceneState.reusableEntities.get(child.entityKey) === child) { sceneState.objectLayer.addChild(child); } else { child.destroy({ children:true }); }
+    });
+    animationState.peons.clear();
+    activeLayer = sceneState.objectLayer;
+    renderedCells.forEach(({ cell, known, rendered }) => {
         const point = centerOf(cell.coordinate, geo);
-        drawCell(rendered, point, geo, Boolean(known), cellCoordinates);
-        if (known && ['ROCK', 'TREE'].includes(rendered.terrain)) visibleTerrainFeatures.push({ terrain:rendered.terrain, point });
-        if (known && rendered.foodQuantity > 0) { drawFood(rendered, point, geo); }
+        if (known && ['ROCK', 'TREE'].includes(rendered.terrain)) visibleTerrainFeatures.push({ terrain:rendered.terrain, point, coordinate:cell.coordinate });
+        if (known && rendered.foodQuantity > 0) { const foodKey = `${cell.coordinate.q}:${cell.coordinate.r}`; drawCachedObject(`food:${foodKey}`, `${rendered.foodQuantity}|${foodKey === state.selectedFoodKey}|${geo.size}`, objectDepth(point, depthPriority.food), () => drawFood(rendered, point, geo)); }
         if (known && rendered.woodBundleQuantity > 0) { visibleWoodBundles.push({ quantity:rendered.woodBundleQuantity, point }); }
     });
     drawSelectedConstructionInfluence(world, geo);
-    visibleTerrainFeatures.forEach(feature => drawTerrainFeature(feature, geo));
+    visibleTerrainFeatures.forEach(feature => drawCachedObject(`terrain-feature:${feature.coordinate.q}:${feature.coordinate.r}`, `${feature.terrain}|${geo.size}`, objectDepth(feature.point, depthPriority.terrainFeature), () => drawTerrainFeature(feature, geo)));
     drawSelectedGranaryNetwork(world, geo);
-    Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
-    Object.values(world.wheatFields || {}).filter(field => !mental || mental[`${field.position.q}:${field.position.r}`]).forEach(field => drawAgriculturalBuilding(field, geo, assets.field, field.wheatQuantity, 'field'));
-    Object.values(world.granaries || {}).filter(granary => !mental || mental[`${granary.position.q}:${granary.position.r}`]).forEach(granary => drawAgriculturalBuilding(granary, geo, assets.granary, granary.wheatQuantity, 'granary'));
+    Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => { const point = centerOf(house.position, geo); drawCachedObject(`house:${house.id}`, `${house.position.q}:${house.position.r}|${house.id === state.selectedHouseId}|${geo.size}`, objectDepth(point, depthPriority.construction), () => drawHouse(house, geo)); });
+    Object.values(world.wheatFields || {}).filter(field => !mental || mental[`${field.position.q}:${field.position.r}`]).forEach(field => { const point = centerOf(field.position, geo); drawCachedObject(`field:${field.id}`, `${field.position.q}:${field.position.r}|${field.wheatQuantity}|${field.id === state.selectedFieldId}|${geo.size}`, -90000 + point.y, () => drawAgriculturalBuilding(field, geo, assets.field, field.wheatQuantity, 'field')); });
+    Object.values(world.granaries || {}).filter(granary => !mental || mental[`${granary.position.q}:${granary.position.r}`]).forEach(granary => { const point = centerOf(granary.position, geo); drawCachedObject(`granary:${granary.id}`, `${granary.position.q}:${granary.position.r}|${granary.wheatQuantity}|${granary.id === state.selectedGranaryId}|${geo.size}`, objectDepth(point, depthPriority.construction), () => drawAgriculturalBuilding(granary, geo, assets.granary, granary.wheatQuantity, 'granary')); });
     if (!mental) {
         drawSheep(Object.values(world.sheep || {}), geo, false);
         drawGraves(world, geo);
-        visibleWoodBundles.forEach(bundle => drawWoodBundle(bundle.quantity, bundle.point, geo));
-        Object.values(world.peons).filter(peon => peon.alive && !peon.insideHouseId).forEach(peon => drawPeon(peon, world, geo));
+        visibleWoodBundles.forEach(bundle => drawCachedObject(`wood:${bundle.point.x}:${bundle.point.y}`, `${bundle.quantity}|${geo.size}`, objectDepth(bundle.point, depthPriority.wood), () => drawWoodBundle(bundle.quantity, bundle.point, geo)));
     }
     else if (selected) {
         drawSheep(rememberedSheepPresentations(selected), geo, true);
@@ -299,8 +501,28 @@ function drawWorld() {
         drawRememberedPeons(selected, world, geo);
         drawPeon(selected, world, geo);
     }
+    if (!mental) {
+        Object.values(world.peons).filter(peon => peon.alive && !peon.insideHouseId).forEach(peon => {
+            const signature = peonRenderSignature(peon, world);
+            const existing = reusablePeons.get(peon.id);
+            sceneState.usedEntities.add(`peon:${peon.id}`);
+            if (existing?.entitySignature === signature) { animationState.peons.set(peon.id, existing); return; }
+            if (existing?.parent) { existing.parent.removeChild(existing); existing.destroy({ children:true }); }
+            const container = drawPeon(peon, world, geo);
+            container.entityType = 'peon'; container.entityId = peon.id; container.entityKey = `peon:${peon.id}`; container.entitySignature = signature;
+        });
+        reusablePeons.forEach((container, peonId) => { if (!animationState.peons.has(peonId) && container.parent) { container.parent.removeChild(container); container.destroy({ children:true }); } });
+    }
+    sceneState.reusableEntities.forEach((container, key) => { if (!sceneState.usedEntities.has(key) && container.parent) { container.parent.removeChild(container); container.destroy({ children:true }); } });
+    activeLayer = pixiApp.stage;
     viewport._geometry = geo;
+    applyCameraTransform(false);
     pixiApp.render();
+}
+
+function peonRenderSignature(peon, world) {
+    const sameCell = Object.values(world.peons).filter(other => other.alive && !other.insideHouseId && other.position.q === peon.position.q && other.position.r === peon.position.r).map(other => other.id).sort((left, right) => left.localeCompare(right)).join(',');
+    return [peon.position.q, peon.position.r, peon.healthPoints, peon.maxHealthPoints, peon.level, peon.teamId, peon.id === state.selectedPeonId, sameCell].join('|');
 }
 
 function rememberedSheepPresentations(selected) {
@@ -315,33 +537,33 @@ function rememberedSheepPresentations(selected) {
 function drawSheep(sheep, geo, remembered) {
     const groups = new Map();
     sheep.forEach(item => { const key = `${item.position.q}:${item.position.r}`; groups.set(key, [...(groups.get(key) || []), item]); });
-    groups.forEach(items => items.forEach((item, index) => {
+    groups.forEach(items => items.sort((left, right) => left.id.localeCompare(right.id)).forEach((item, index) => {
         const point = centerOf(item.position, geo);
         const angle = items.length === 1 ? 0 : index * Math.PI * 2 / items.length;
         const spread = items.length === 1 ? 0 : geo.size * .28;
         const sprite = new PIXI.Sprite(assets.sheep);
         const size = Math.max(8, geo.size * 1.05);
         sprite.anchor.set(.5, .8); sprite.position.set(point.x + Math.cos(angle) * spread, point.y + Math.sin(angle) * spread); setSpriteHeight(sprite, size); sprite.alpha = remembered ? .55 : 1;
-        sprite.zIndex = objectDepth(sprite.position, index * .01);
-        pixiApp.stage.addChild(sprite);
+        sprite.zIndex = objectDepth(sprite.position, depthPriority.sheep + index * .001);
+        addDisplayObject(sprite);
     }));
 }
 
 function drawHouse(house, geo) {
     const point = centerOf(house.position, geo);
     drawGroundShadow(point, geo, Math.max(7, geo.size * .62));
-    if (house.id === state.selectedHouseId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(7, geo.size * .78), Math.max(4, geo.size * .35)).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .09) }); selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection); }
+    if (house.id === state.selectedHouseId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(7, geo.size * .78), Math.max(4, geo.size * .35)).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .09) }); selection.zIndex = objectDepth(point, -1); addDisplayObject(selection); }
     const sprite = new PIXI.Sprite(assets.house);
     const size = Math.max(10, geo.size * 2.15);
     sprite.anchor.set(.5, .82); sprite.position.set(point.x, point.y + geo.size * .2); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point);
-    pixiApp.stage.addChild(sprite);
+    addDisplayObject(sprite);
 }
 
 function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
     const point = centerOf(item.position, geo);
     if (kind === 'granary') drawGroundShadow(point, geo, Math.max(7, geo.size * .58));
-    if (kind === 'granary' && item.id === state.selectedGranaryId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(8, geo.size * .8), Math.max(4, geo.size * .36)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) }); selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection); }
-    if (kind === 'field' && item.id === state.selectedFieldId) { const selection = new PIXI.Graphics().poly(hexPoints(geo.size * .92).map((value, index) => value + (index % 2 === 0 ? point.x : point.y))).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) }); selection.zIndex = -89000 + point.y; pixiApp.stage.addChild(selection); }
+    if (kind === 'granary' && item.id === state.selectedGranaryId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(8, geo.size * .8), Math.max(4, geo.size * .36)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) }); selection.zIndex = objectDepth(point, -1); addDisplayObject(selection); }
+    if (kind === 'field' && item.id === state.selectedFieldId) { const selection = new PIXI.Graphics().poly(hexPoints(geo.size * .92).map((value, index) => value + (index % 2 === 0 ? point.x : point.y))).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) }); selection.zIndex = -89000 + point.y; addDisplayObject(selection); }
     const sprite = new PIXI.Sprite(texture);
     const size = kind === 'field' ? Math.max(24, geo.size * 1.62) : Math.max(10, geo.size * 2.05);
     sprite.anchor.set(.5, kind === 'field' ? .5 : .82); sprite.position.set(point.x, point.y + (kind === 'field' ? 0 : geo.size * .2));
@@ -355,14 +577,14 @@ function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
         mask.position.set(point.x, point.y);
         sprite.mask = mask;
         mask.zIndex = -90000 + point.y;
-        pixiApp.stage.addChild(mask);
+        addDisplayObject(mask);
     } else { setSpriteHeight(sprite, size); }
     sprite.zIndex = kind === 'field' ? -90000 + point.y : objectDepth(point);
-    pixiApp.stage.addChild(sprite);
+    addDisplayObject(sprite);
     if (quantity > 0 && geo.size > 10) {
-        const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } } });
+        const label = createText(String(quantity), { fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } });
         const labelOffset = kind === 'field' ? geo.size * .62 : size * .3;
-        label.anchor.set(.5); label.position.set(point.x + labelOffset, point.y + labelOffset); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label);
+        label.anchor.set(.5); label.position.set(point.x + labelOffset, point.y + labelOffset); label.zIndex = objectDepth(point, 2); addDisplayObject(label);
     }
 }
 
@@ -402,7 +624,7 @@ function drawSelectedConstructionInfluence(world, geo) {
         overlay.poly(polygon).fill({ color, alpha:.2 }).stroke({ color, alpha:.72, width:Math.max(1, geo.size * .055) });
     });
     overlay.zIndex = -95000;
-    pixiApp.stage.addChild(overlay);
+    addDisplayObject(overlay);
 }
 
 function drawSelectedGranaryNetwork(world, geo) {
@@ -417,7 +639,7 @@ function drawSelectedGranaryNetwork(world, geo) {
         links.circle(target.x, target.y, Math.max(7, geo.size * .66));
     });
     links.stroke({ color, width:Math.max(1.5, geo.size * .08), alpha:.85 }); links.zIndex = -50000;
-    pixiApp.stage.addChild(links);
+    addDisplayObject(links);
 }
 
 function rememberedPeonPresentations(selected) {
@@ -440,7 +662,7 @@ function drawRememberedPeons(selected, world, geo) {
         const key = `${memory.position.q}:${memory.position.r}`;
         groups.set(key, [...(groups.get(key) || []), memory]);
     });
-    groups.forEach(memories => memories.forEach((memory, index) => {
+    groups.forEach(memories => memories.sort((left, right) => left.peonId.localeCompare(right.peonId)).forEach((memory, index) => {
         const peon = world.peons[memory.peonId];
         if (peon) drawPeon(peon, world, geo, { position:memory.position, remembered:true, relation:memory.relation, index, total:memories.length });
     }));
@@ -466,7 +688,7 @@ function drawCell(cell, point, geo, known, cellCoordinates) {
     if (!cellCoordinates.has(`${cell.coordinate.q}:${cell.coordinate.r + 1}`)) tile.addChild(leftSide);
     tile.addChild(base, texture, textureMask);
     tile.addChild(border);
-    pixiApp.stage.addChild(tile);
+    addDisplayObject(tile);
 }
 
 function setSpriteHeight(sprite, height) {
@@ -483,27 +705,24 @@ function drawTerrainFeature(feature, geo) {
     sprite.position.set(feature.point.x, feature.point.y + geo.size * .2);
     setSpriteHeight(sprite, height);
     sprite.zIndex = objectDepth(feature.point);
-    pixiApp.stage.addChild(sprite);
+    addDisplayObject(sprite);
 }
 
 function drawFood(cell, point, geo) {
     const quantityScale = .72 + Math.min(cell.foodQuantity, 4) * .08;
     const size = geo.size * quantityScale;
     const sprite = new PIXI.Sprite(assets.food);
+    if (`${cell.coordinate.q}:${cell.coordinate.r}` === state.selectedFoodKey) { const selection = new PIXI.Graphics().circle(point.x, point.y, Math.max(5, geo.size * .55)).stroke({ color:'#ffd166', width:Math.max(1, geo.size * .09) }); selection.zIndex = objectDepth(point, -1); addDisplayObject(selection); }
     sprite.anchor.set(.5, .75); sprite.position.set(point.x, point.y + geo.size * .08); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point);
-    pixiApp.stage.addChild(sprite);
-    if (geo.size > 10) {
-        const label = new PIXI.Text({ text:String(cell.foodQuantity), style:{ fill:'#ffffff', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#17120a', width:2 } } });
-        label.anchor.set(.5); label.position.set(point.x + size * .32, point.y + size * .34); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label);
-    }
+    addDisplayObject(sprite);
 }
 
 function drawWoodBundle(quantity, point, geo) {
     const sprite = new PIXI.Sprite(assets.woodBundle);
     const size = Math.max(7, geo.size * .82);
     sprite.anchor.set(.5, .75); sprite.position.set(point.x - geo.size * .48, point.y + geo.size * .38); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point, 1);
-    pixiApp.stage.addChild(sprite);
-    if (geo.size > 10) { const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4d5', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .3), fontWeight:'700', stroke:{ color:'#25150b', width:2 } } }); label.anchor.set(.5); label.position.set(sprite.x + size * .3, sprite.y + size * .3); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label); }
+    addDisplayObject(sprite);
+    if (geo.size > 10) { const label = createText(String(quantity), { fill:'#fff4d5', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .3), fontWeight:'700', stroke:{ color:'#25150b', width:2 } }); label.anchor.set(.5); label.position.set(sprite.x + size * .3, sprite.y + size * .3); label.zIndex = objectDepth(point, 2); addDisplayObject(label); }
 }
 
 function positionedGraves(graves, geo) {
@@ -512,11 +731,11 @@ function positionedGraves(graves, geo) {
         const key = `${grave.position.q}:${grave.position.r}`;
         groups.set(key, [...(groups.get(key) || []), grave]);
     });
-    return [...groups.values()].flatMap(graves => graves.map((grave, index) => {
+    return [...groups.values()].flatMap(graves => graves.sort((left, right) => left.peonId.localeCompare(right.peonId)).map((grave, index) => {
         const center = centerOf(grave.position, geo);
         const angle = graves.length === 1 ? .35 : index * Math.PI * 2 / graves.length;
         const spread = geo.size * .42;
-        return { grave, point:{ x:center.x + Math.cos(angle) * spread, y:center.y + Math.sin(angle) * spread } };
+        return { grave, point:{ x:center.x + Math.cos(angle) * spread, y:center.y + Math.sin(angle) * spread }, depthOrder:index };
     }));
 }
 
@@ -540,16 +759,16 @@ function drawRememberedGraves(selected, geo) {
 }
 
 function drawGravePresentations(presentations, geo, remembered) {
-    presentations.forEach(({ grave, point }) => {
+    presentations.forEach(({ grave, point, depthOrder }) => {
         const sprite = new PIXI.Sprite(assets.grave);
         const size = Math.max(7, geo.size * .9);
-        sprite.anchor.set(.5, .84); sprite.position.set(point.x, point.y); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point);
+        sprite.anchor.set(.5, .84); sprite.position.set(point.x, point.y); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point, depthPriority.grave + depthOrder * .001);
         sprite.alpha = remembered ? .5 : grave.peonId === state.selectedPeonId ? 1 : .88;
         if (grave.peonId === state.selectedPeonId) {
             const selection = new PIXI.Graphics().circle(point.x, point.y, size * .46).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .08) });
-            selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection);
+            selection.zIndex = objectDepth(point, -1); addDisplayObject(selection);
         }
-        pixiApp.stage.addChild(sprite);
+        addDisplayObject(sprite);
     });
 }
 
@@ -557,7 +776,7 @@ function drawPeon(peon, world, geo, presentation = {}) {
     const position = presentation.position || peon.position;
     const point = centerOf(position, geo);
     const team = world.teams[peon.teamId];
-    const sameCell = Object.values(world.peons).filter(other => other.alive && other.position.q === position.q && other.position.r === position.r);
+    const sameCell = Object.values(world.peons).filter(other => other.alive && other.position.q === position.q && other.position.r === position.r).sort((left, right) => left.id.localeCompare(right.id));
     const index = presentation.index ?? sameCell.findIndex(other => other.id === peon.id);
     const total = presentation.total ?? sameCell.length;
     const angle = Math.max(0, index) * Math.PI * 2 / Math.max(1, total);
@@ -567,7 +786,7 @@ function drawPeon(peon, world, geo, presentation = {}) {
     const spriteHeight = Math.max(6, geo.size * 1.28); const spriteWidth = spriteHeight * .72;
     const relationColor = presentation.relation === 'ENEMY' ? '#ff6666' : presentation.relation === 'ALLY' ? '#7fdb86' : '#f4d58a';
     const peonContainer = new PIXI.Container();
-    peonContainer.position.set(x, y); peonContainer.zIndex = objectDepth({ x, y }, 1);
+    peonContainer.position.set(x, y); peonContainer.zIndex = objectDepth({ x, y }, depthPriority.peon + Math.max(0, index) * .001);
     peonContainer.alpha = presentation.remembered ? .48 : 1;
     const marker = new PIXI.Graphics().ellipse(0, spriteHeight * .25, spriteWidth * .43, spriteHeight * .28).fill({ color:team?.color || '#dddddd', alpha:.8 });
     if (!presentation.remembered && peon.id === state.selectedPeonId) marker.stroke({ color:'#ffffff', width:Math.max(1, geo.size * .09) });
@@ -578,22 +797,22 @@ function drawPeon(peon, world, geo, presentation = {}) {
     peonContainer.addChild(sprite);
     if (!presentation.remembered && geo.size > 9) {
         const barWidth = spriteWidth;
-        const barY = -spriteHeight * .7;
-        const healthBar = new PIXI.Graphics().rect(-barWidth / 2, barY, barWidth, 2).fill('#180d0d').rect(-barWidth / 2, barY, barWidth * peon.healthPoints / peon.maxHealthPoints, 2).fill('#df5b5b');
+        const barY = -spriteHeight * .98;
+        const healthBar = new PIXI.Container();
+        const healthBackground = new PIXI.Sprite(PIXI.Texture.WHITE);
+        const healthFill = new PIXI.Sprite(PIXI.Texture.WHITE);
+        healthBackground.anchor.set(0, .5); healthBackground.position.set(-barWidth / 2, barY + 1); healthBackground.width = barWidth; healthBackground.height = 2; healthBackground.tint = 0x180d0d; healthBackground.roundPixels = true;
+        healthFill.anchor.set(0, .5); healthFill.position.set(-barWidth / 2, barY + 1); healthFill.width = barWidth * peon.healthPoints / peon.maxHealthPoints; healthFill.height = 2; healthFill.tint = 0xdf5b5b; healthFill.roundPixels = true;
+        healthBar.addChild(healthBackground, healthFill);
         peonContainer.addChild(healthBar);
-        const levelRadius = Math.max(3, geo.size * .2);
-        const levelX = barWidth / 2 + levelRadius + 1;
-        const levelBadge = new PIXI.Graphics().circle(levelX, barY + 1, levelRadius).fill('#d9a441').stroke({ color:'#211708', width:Math.max(.7, geo.size * .04) });
-        const levelLabel = new PIXI.Text({ text:String(peon.level), style:{ fill:'#17130b', fontFamily:'sans-serif', fontSize:Math.max(5, levelRadius * 1.45), fontWeight:'800' } });
-        levelLabel.anchor.set(.5); levelLabel.position.set(levelX, barY + 1);
-        peonContainer.addChild(levelBadge, levelLabel);
     }
-    pixiApp.stage.addChild(peonContainer);
+    addDisplayObject(peonContainer);
     if (!presentation.remembered) animationState.peons.set(peon.id, peonContainer);
+    return peonContainer;
 }
 
 function playActionAnimations(events) {
-    if (animationState.reducedMotion || !viewport._geometry || !events.length) return;
+    if (animationState.reducedMotion || !viewport._geometry || !events.length) { finishVisualBatch(); return; }
     const moved = events.some(event => event.eventType === 'PEON_MOVED');
     events.forEach(event => {
         const delay = moved && event.eventType === 'PEON_SAW' ? 300 : 0;
@@ -605,11 +824,34 @@ function playActionAnimations(events) {
         if (event.eventType === 'PEON_CHOPPED_WOOD') animateChopWood(event);
         if (event.eventType === 'PEON_LEVELED_UP') animateLevelUp(event);
     });
+    if (!animationState.animations.length) finishVisualBatch();
+}
+
+function enqueueActionAnimations(events) {
+    if (!events.length || animationState.reducedMotion) return;
+    animationState.visualQueue.push(events);
+    const maximumQueuedBatches = 8;
+    if (animationState.visualQueue.length > maximumQueuedBatches) animationState.visualQueue.splice(0, animationState.visualQueue.length - maximumQueuedBatches);
+    startNextVisualBatch();
+}
+
+function startNextVisualBatch() {
+    if (animationState.processingBatch || animationState.animations.length || !animationState.visualQueue.length) return;
+    const events = animationState.visualQueue.shift();
+    animationState.processingBatch = true;
+    animationState.currentSpeedFactor = Math.min(4, Math.max(state.simulationSpeed?.multiplier || 1, 1 + animationState.visualQueue.length * .55));
+    playActionAnimations(events);
+}
+
+function finishVisualBatch() {
+    animationState.processingBatch = false;
+    animationState.currentSpeedFactor = 1;
+    if (animationState.visualQueue.length) startNextVisualBatch();
 }
 
 function queueAnimation(duration, delay, update, complete = () => {}) {
-    const multiplier = state.simulationSpeed?.multiplier || 1;
-    animationState.animations.push({ duration:duration / multiplier, delay:delay / multiplier, update, complete, startedAt:null });
+    const speedFactor = animationState.currentSpeedFactor || state.simulationSpeed?.multiplier || 1;
+    animationState.animations.push({ duration:duration / speedFactor, delay:delay / speedFactor, update, complete, startedAt:null });
     if (animationState.frame === null) animationState.frame = requestAnimationFrame(runAnimations);
 }
 
@@ -626,6 +868,7 @@ function runAnimations(timestamp) {
     });
     pixiApp.render();
     animationState.frame = animationState.animations.length ? requestAnimationFrame(runAnimations) : null;
+    if (!animationState.animations.length) finishVisualBatch();
 }
 
 function removeEffect(effect) {
@@ -733,7 +976,7 @@ function animateLevelUp(event) {
         rays.moveTo(Math.cos(angle) * size * .78, Math.sin(angle) * size * .78).lineTo(Math.cos(angle) * size * 1.3, Math.sin(angle) * size * 1.3);
     }
     rays.stroke({ color:'#ffd65c', width:Math.max(1, size * .09), alpha:.9 });
-    const levelLabel = new PIXI.Text({ text:`NIVEAU ${event.payload?.levelAfter ?? ''}`, style:{ fill:'#fff1a8', fontFamily:'Georgia, serif', fontSize:Math.max(9, size * .55), fontWeight:'700', stroke:{ color:'#4d3000', width:3 }, dropShadow:{ color:'#000000', alpha:.65, blur:2, distance:2 } } });
+    const levelLabel = createText(`NIVEAU ${event.payload?.levelAfter ?? ''}`, { fill:'#fff1a8', fontFamily:'Georgia, serif', fontSize:Math.max(9, size * .55), fontWeight:'700', stroke:{ color:'#4d3000', width:3 }, dropShadow:{ color:'#000000', alpha:.65, blur:2, distance:2 } });
     levelLabel.anchor.set(.5); levelLabel.y = -size * 1.2;
     celebration.addChild(aura, innerRing, rays, levelLabel);
     celebration.scale.set(.2); celebration.alpha = 0; actor.addChild(celebration);
@@ -753,15 +996,26 @@ function renderSelection() {
     const house = state.world?.houses?.[state.selectedHouseId];
     const granary = state.world?.granaries?.[state.selectedGranaryId];
     const field = state.world?.wheatFields?.[state.selectedFieldId];
+    const foodCell = state.world?.cells?.[state.selectedFoodKey];
+    const selectedPeon = state.world?.peons?.[state.selectedPeonId];
+    const rememberedFood = $('#mentalMapToggle').checked && selectedPeon?.alive ? selectedPeon.mentalMap?.[state.selectedFoodKey] : null;
+    const food = foodCell ? { ...foodCell, foodQuantity:rememberedFood?.rememberedFoodQuantity ?? foodCell.foodQuantity } : null;
     $('#mentalMapToggle').disabled = Boolean(house || granary || field);
-    $('#inspectorTitle').textContent = granary ? 'GRENIER SÉLECTIONNÉ' : house ? 'MAISON SÉLECTIONNÉE' : field ? 'CHAMP SÉLECTIONNÉ' : 'PEON SÉLECTIONNÉ';
+    $('#inspectorTitle').textContent = granary ? 'GRENIER SÉLECTIONNÉ' : house ? 'MAISON SÉLECTIONNÉE' : field ? 'CHAMP SÉLECTIONNÉ' : food ? 'BAIES SÉLECTIONNÉES' : 'PEON SÉLECTIONNÉ';
     $('#houseDetails').hidden = !house;
     $('#granaryDetails').hidden = !granary;
     $('#fieldDetails').hidden = !field;
+    $('#foodDetails').hidden = !food;
     if (granary) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderGranary(granary); return; }
     if (house) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderHouse(house); return; }
     if (field) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderField(field); return; }
+    if (food) { $('#peonEmpty').hidden = true; $('#peonDetails').hidden = true; renderFood(food); return; }
     renderPeon();
+}
+
+function renderFood(cell) {
+    $('#foodPosition').textContent = `${cell.coordinate.q}, ${cell.coordinate.r}`;
+    $('#foodQuantity').textContent = cell.foodQuantity;
 }
 
 function renderField(field) {
@@ -958,7 +1212,7 @@ function renderAnalysis(report) {
 canvas.addEventListener('click', event => {
     if (state.dragMoved) { state.dragMoved = false; return; }
     if (!state.world || !viewport._geometry) return;
-    const rect = canvas.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top;
+    const rect = canvas.getBoundingClientRect(); const worldPoint = screenToWorld({ x:event.clientX - rect.left, y:event.clientY - rect.top }); const x = worldPoint.x; const y = worldPoint.y;
     const selected = state.world.peons[state.selectedPeonId];
     const mental = !state.selectedHouseId && !state.selectedGranaryId && !state.selectedFieldId && $('#mentalMapToggle').checked && selected?.alive;
     const peonCandidates = mental
@@ -967,10 +1221,11 @@ canvas.addEventListener('click', event => {
     const houseCandidates = Object.values(state.world.houses || {}).filter(house => !mental || selected?.mentalMap?.[`${house.position.q}:${house.position.r}`]).map(house => ({ house, position:house.position }));
     const granaryCandidates = Object.values(state.world.granaries || {}).filter(granary => !mental || selected?.mentalMap?.[`${granary.position.q}:${granary.position.r}`]).map(granary => ({ granary, position:granary.position }));
     const fieldCandidates = Object.values(state.world.wheatFields || {}).filter(field => !mental || selected?.mentalMap?.[`${field.position.q}:${field.position.r}`]).map(field => ({ field, position:field.position }));
-    const candidates = [...granaryCandidates.map(candidate => ({ ...candidate, kind:'granary' })), ...houseCandidates.map(candidate => ({ ...candidate, kind:'house' })), ...fieldCandidates.map(candidate => ({ ...candidate, kind:'field' })), ...peonCandidates.map(candidate => ({ ...candidate, kind:'peon' }))];
+    const foodCandidates = mental ? Object.values(selected.mentalMap || {}).filter(memory => memory.rememberedFoodQuantity > 0).map(memory => ({ food:{ coordinate:memory.coordinate }, position:memory.coordinate })) : Object.values(state.world.cells || {}).filter(cell => cell.foodQuantity > 0).map(cell => ({ food:cell, position:cell.coordinate }));
+    const candidates = [...granaryCandidates.map(candidate => ({ ...candidate, kind:'granary' })), ...houseCandidates.map(candidate => ({ ...candidate, kind:'house' })), ...fieldCandidates.map(candidate => ({ ...candidate, kind:'field' })), ...foodCandidates.map(candidate => ({ ...candidate, kind:'food' })), ...peonCandidates.map(candidate => ({ ...candidate, kind:'peon' }))];
     const nearest = candidates.map(candidate => ({ ...candidate, point:candidate.point || centerOf(candidate.position, viewport._geometry) })).sort((a,b) => Math.hypot(a.point.x-x,a.point.y-y)-Math.hypot(b.point.x-x,b.point.y-y))[0];
     if (nearest && Math.hypot(nearest.point.x-x, nearest.point.y-y) < viewport._geometry.size * 1.3) {
-        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; state.selectedGranaryId = null; state.selectedFieldId = null; $('#mentalMapToggle').checked = false; } else if (nearest.kind === 'granary') { state.selectedGranaryId = nearest.granary.id; state.selectedHouseId = null; state.selectedFieldId = null; $('#mentalMapToggle').checked = false; } else if (nearest.kind === 'field') { state.selectedFieldId = nearest.field.id; state.selectedHouseId = null; state.selectedGranaryId = null; $('#mentalMapToggle').checked = false; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; state.selectedGranaryId = null; state.selectedFieldId = null; }
+        if (nearest.kind === 'house') { state.selectedHouseId = nearest.house.id; state.selectedGranaryId = null; state.selectedFieldId = null; state.selectedFoodKey = null; $('#mentalMapToggle').checked = false; } else if (nearest.kind === 'granary') { state.selectedGranaryId = nearest.granary.id; state.selectedHouseId = null; state.selectedFieldId = null; state.selectedFoodKey = null; $('#mentalMapToggle').checked = false; } else if (nearest.kind === 'field') { state.selectedFieldId = nearest.field.id; state.selectedHouseId = null; state.selectedGranaryId = null; state.selectedFoodKey = null; $('#mentalMapToggle').checked = false; } else if (nearest.kind === 'food') { state.selectedFoodKey = `${nearest.food.coordinate.q}:${nearest.food.coordinate.r}`; state.selectedHouseId = null; state.selectedGranaryId = null; state.selectedFieldId = null; } else { state.selectedPeonId = nearest.peon.id; state.selectedHouseId = null; state.selectedGranaryId = null; state.selectedFieldId = null; state.selectedFoodKey = null; }
         render();
     }
 });
@@ -978,14 +1233,14 @@ canvas.addEventListener('click', event => {
 $('#houseOccupants').addEventListener('click', event => {
     const button = event.target.closest('[data-peon-id]');
     if (!button) return;
-    state.selectedPeonId = button.dataset.peonId; state.selectedHouseId = null; state.selectedGranaryId = null; state.selectedFieldId = null; render();
+    state.selectedPeonId = button.dataset.peonId; state.selectedHouseId = null; state.selectedGranaryId = null; state.selectedFieldId = null; state.selectedFoodKey = null; render();
 });
 
 canvas.addEventListener('pointerdown', event => { state.dragging = true; state.dragMoved = false; state.dragStart = { x:event.clientX, y:event.clientY, panX:state.panX, panY:state.panY }; canvas.classList.add('dragging'); canvas.setPointerCapture(event.pointerId); });
-canvas.addEventListener('pointermove', event => { if (!state.dragging) return; const dx=event.clientX-state.dragStart.x; const dy=event.clientY-state.dragStart.y; if (Math.abs(dx)+Math.abs(dy)>3) state.dragMoved=true; state.panX=state.dragStart.panX+dx; state.panY=state.dragStart.panY+dy; drawWorld(); });
+canvas.addEventListener('pointermove', event => { if (!state.dragging) return; const dx=event.clientX-state.dragStart.x; const dy=event.clientY-state.dragStart.y; if (Math.abs(dx)+Math.abs(dy)>3) state.dragMoved=true; state.panX=state.dragStart.panX+dx; state.panY=state.dragStart.panY+dy; applyCameraTransform(); });
 canvas.addEventListener('pointerup', event => { state.dragging=false; canvas.classList.remove('dragging'); if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId); });
 canvas.addEventListener('pointercancel', () => { state.dragging=false; canvas.classList.remove('dragging'); });
-canvas.addEventListener('wheel', event => { event.preventDefault(); changeZoom(event.deltaY < 0 ? .35 : -.35); }, { passive:false });
+canvas.addEventListener('wheel', event => { event.preventDefault(); const rect = canvas.getBoundingClientRect(); changeZoom(event.deltaY < 0 ? .35 : -.35, { x:event.clientX - rect.left, y:event.clientY - rect.top }); }, { passive:false });
 
 $('#worldSelect').addEventListener('change', event => selectWorld(event.target.value));
 $('#speedButton').addEventListener('click', toggleSimulationSpeed);
@@ -1032,10 +1287,16 @@ $('#deleteWorldsButton').addEventListener('click', async () => {
 });
 $('#playButton').addEventListener('click', () => changeStatus(state.liveWorld?.status === 'RUNNING' ? 'pause' : 'start'));
 $('#stepButton').addEventListener('click', () => changeStatus('step'));
-$('#mentalMapToggle').addEventListener('change', render);
+$('#mentalMapToggle').addEventListener('change', async event => {
+    if (event.target.checked && state.mentalMapsStale && state.liveWorld) {
+        await resynchronizeLiveWorld(state.liveWorld.id);
+        if (!state.historical) state.world = state.liveWorld;
+    }
+    render();
+});
 $('#zoomIn').addEventListener('click', () => changeZoom(.5));
 $('#zoomOut').addEventListener('click', () => changeZoom(-.5));
-$('#zoomReset').addEventListener('click', () => { resetView(); drawWorld(); });
+$('#zoomReset').addEventListener('click', () => { resetView(); applyCameraTransform(); });
 $('#timelineSlider').addEventListener('input', event => { $('#timelineLabel').textContent = `Séquence consultée : ${event.target.value} / ${state.liveWorld?.sequenceNumber || 0}`; });
 $('#timelineSlider').addEventListener('change', event => showSequence(event.target.value));
 $('#liveButton').addEventListener('click', () => showSequence(state.liveWorld?.sequenceNumber || 0));

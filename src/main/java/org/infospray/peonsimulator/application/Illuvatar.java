@@ -589,7 +589,7 @@ public class Illuvatar {
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForField())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         WheatField field = new WheatField(UUID.randomUUID(), actor.getPosition(), actor.getTeamId(), attachedGranary.getId(), world.getCurrentRound() + this.defaults.getFieldGrowthRounds());
         world.getWheatFields().put(field.getId(), field);
-        events.add(this.event(world, request, actor, "FIELD_BUILT", index, Map.of("fieldId", field.getId(), "granaryId", attachedGranary.getId(), "position", field.getPosition(), "readyAtRound", field.getReadyAtRound())));
+        events.add(this.event(world, request, actor, "FIELD_BUILT", index, Map.of("fieldId", field.getId(), "granaryId", attachedGranary.getId(), "position", field.getPosition(), "readyAtRound", field.getReadyAtRound(), "woodSpent", this.defaults.getWoodRequiredForField(), "woodAfter", actor.itemCount(ItemType.WOOD))));
         this.gainExperience(world, actor, request, events, index, this.defaults.getBuildFieldExperienceGain());
     }
 
@@ -601,7 +601,7 @@ public class Illuvatar {
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForGranary())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         Granary granary = new Granary(UUID.randomUUID(), actor.getPosition(), actor.getTeamId());
         world.getGranaries().put(granary.getId(), granary);
-        events.add(this.event(world, request, actor, "GRANARY_BUILT", index, Map.of("granaryId", granary.getId(), "position", granary.getPosition(), "capacity", this.defaults.getGranaryCapacity())));
+        events.add(this.event(world, request, actor, "GRANARY_BUILT", index, Map.of("granaryId", granary.getId(), "position", granary.getPosition(), "capacity", this.defaults.getGranaryCapacity(), "woodSpent", this.defaults.getWoodRequiredForGranary(), "woodAfter", actor.itemCount(ItemType.WOOD))));
         this.gainExperience(world, actor, request, events, index, this.defaults.getBuildGranaryExperienceGain());
     }
 
@@ -622,7 +622,7 @@ public class Illuvatar {
         if (granary == null) { this.reject(world, actor, request, events, index, "NO_AVAILABLE_ALLIED_GRANARY"); return; }
         int harvested = field.harvest(this.defaults.getGranaryCapacity() - granary.getWheatQuantity(), world.getCurrentRound(), this.defaults.getFieldGrowthRounds());
         granary.store(harvested, this.defaults.getGranaryCapacity());
-        events.add(this.event(world, request, actor, "WHEAT_HARVESTED", index, Map.of("fieldId", field.getId(), "granaryId", granary.getId(), "quantity", harvested, "storedWheat", granary.getWheatQuantity())));
+        events.add(this.event(world, request, actor, "WHEAT_HARVESTED", index, Map.of("fieldId", field.getId(), "granaryId", granary.getId(), "quantity", harvested, "fieldWheatAfter", field.getWheatQuantity(), "fieldReadyAtRound", field.getReadyAtRound(), "storedWheat", granary.getWheatQuantity())));
         this.gainExperience(world, actor, request, events, index, this.defaults.getHarvestExperienceGain());
     }
 
