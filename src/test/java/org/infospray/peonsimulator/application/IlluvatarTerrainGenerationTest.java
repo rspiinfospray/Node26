@@ -42,7 +42,23 @@ class IlluvatarTerrainGenerationTest {
         assertThat(firstTerrain).isEqualTo(secondTerrain);
     }
 
+    @Test
+    void shouldGenerateOneCellWideRiverAcrossTheWholeMapWhenEnabled() {
+        World world = this.createWorld(8128L, true);
+        List<Cell> river = world.getCells().values().stream().filter(cell -> cell.getTerrain() == TerrainType.RIVER).toList();
+        int minQ = world.getCells().values().stream().mapToInt(cell -> cell.getCoordinate().q()).min().orElseThrow();
+        int maxQ = world.getCells().values().stream().mapToInt(cell -> cell.getCoordinate().q()).max().orElseThrow();
+
+        assertThat(river).hasSize(maxQ - minQ + 1);
+        assertThat(river).extracting(cell -> cell.getCoordinate().q()).containsExactlyInAnyOrderElementsOf(java.util.stream.IntStream.rangeClosed(minQ, maxQ).boxed().toList());
+        assertThat(world.isRiverGenerationEnabled()).isTrue();
+    }
+
     private World createWorld(long seed) {
+        return this.createWorld(seed, false);
+    }
+
+    private World createWorld(long seed, boolean generateRiver) {
         WorldRepository worldRepository = mock(WorldRepository.class);
         PeonFirstNameCatalog names = mock(PeonFirstNameCatalog.class);
         when(worldRepository.findAll()).thenReturn(List.of());
@@ -50,7 +66,7 @@ class IlluvatarTerrainGenerationTest {
         when(names.size()).thenReturn(1);
         when(names.nameAt(anyInt())).thenReturn("Borin");
         Illuvatar illuvatar = new Illuvatar(worldRepository, mock(EventRepository.class), mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionProvider.class), names, new GameDefaultsProperties());
-        CreateWorldRequest request = new CreateWorldRequest("Amas-" + seed, 50, 50, 15, 20, 0, 1, 1, 0, 5, 10, seed, List.of(new CreateWorldRequest.TeamRequest("Test", 1)));
+        CreateWorldRequest request = new CreateWorldRequest("Amas-" + seed, 50, 50, 15, 20, 0, 1, 1, 0, 5, 10, seed, generateRiver, List.of(new CreateWorldRequest.TeamRequest("Test", 1)));
         return illuvatar.createWorld(request);
     }
 

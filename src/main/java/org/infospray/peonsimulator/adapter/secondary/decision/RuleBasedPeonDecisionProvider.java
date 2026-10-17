@@ -49,6 +49,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (context.buildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForHouse()) { candidates.add(this.scoreBuildHouse(context, situationKey)); }
         if (context.fieldBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForField() && this.shouldExpandAgriculture(context)) { candidates.add(this.scoreBuildField(context, situationKey)); }
         if (context.granaryBuildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForGranary()) { candidates.add(this.scoreBuildGranary(context, situationKey)); }
+        if (context.woodQuantity() >= this.defaults.getWoodRequiredForBridge()) { context.mentalMap().values().stream().filter(memory -> memory.getCoordinate().distanceTo(context.position()) == 1 && memory.getTerrain() == TerrainType.RIVER).forEach(memory -> candidates.add(this.scoreBuildBridge(context, memory.getCoordinate(), situationKey))); }
         if (context.woodBundleQuantity() > 0) { candidates.add(this.scoreLoot(context, situationKey)); }
         context.peonsOnCurrentCell().stream().filter(peon -> !peon.teamId().equals(context.teamId())).forEach(enemy -> candidates.add(this.scoreAttack(context, enemy, situationKey)));
         if (this.canCommunicate(context)) { candidates.add(this.scoreCommunicate(context, situationKey)); }
@@ -200,6 +201,15 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         factors.put("champs connus", context.knownFields().size() * 10.0);
         this.addLearning(context, situationKey, ActionType.CONSTRUIRE_GRENIER, factors);
         return this.weighted(context, new PeonAction(ActionType.CONSTRUIRE_GRENIER, null, null, PeonPurpose.AIDER_LES_ALLIES, ""), factors);
+    }
+
+    private WeightedAction scoreBuildBridge(PeonDecisionContext context, HexCoordinate destination, String situationKey) {
+        Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("nouveau passage", 62.0);
+        factors.put("ingéniosité", context.personality().getIngenuity() * 0.45);
+        factors.put("exploration", context.personality().getCuriosity() * 0.25);
+        this.addLearning(context, situationKey, ActionType.CONSTRUIRE_PONT, factors);
+        return this.weighted(context, new PeonAction(ActionType.CONSTRUIRE_PONT, destination, null, PeonPurpose.AIDER_LES_ALLIES, ""), factors);
     }
 
     private WeightedAction scoreAttack(PeonDecisionContext context, PeonDecisionContext.ObservedPeon enemy, String situationKey) {

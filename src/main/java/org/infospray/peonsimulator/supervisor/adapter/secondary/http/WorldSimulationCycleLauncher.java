@@ -60,6 +60,7 @@ public class WorldSimulationCycleLauncher implements SimulationCycleLauncher {
         request.put("width", world.path("width").asInt());
         request.put("height", world.path("height").asInt());
         request.put("rockPercentage", world.path("rockPercentage").asInt());
+        request.put("generateRiver", world.path("riverGenerationEnabled").asBoolean(false));
         request.put("treePercentage", world.path("treePercentage").asInt());
         request.put("foodCellPercentage", world.path("foodCellPercentage").asInt());
         request.put("minFoodPerCell", world.path("minFoodPerCell").asInt());

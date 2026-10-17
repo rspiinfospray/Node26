@@ -6,8 +6,8 @@ await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, a
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
 pixiApp.stage.sortableChildren = true;
-const assetVersion = '20261017-flat-terrain1';
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass-flat.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field-flat.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(`${source}?v=${assetVersion}`)])));
+const assetVersion = '20261017-river-tiles2';
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass-flat.png', river:'/assets/terrain-river.png', bridge:'/assets/terrain-bridge.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field-flat.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(`${source}?v=${assetVersion}`)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
@@ -60,6 +60,7 @@ function applyCreationParameters(source) {
         maxRounds:state.defaults.maxRounds, hungerHealthLossPerTurn:state.defaults.hungerHealthLossPerTurn
     };
     Object.entries(values).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value; });
+    form.elements.generateRiver.checked = source ? Boolean(source.riverGenerationEnabled) : false;
     const teams = source ? Object.values(source.teams || {}) : [];
     const peons = source ? Object.values(source.peons || {}) : [];
     form.elements.redName.value = teams[0]?.name || 'Rouges';
@@ -451,17 +452,20 @@ function drawCell(cell, point, geo, known, cellCoordinates) {
     tile.position.set(point.x, point.y); tile.zIndex = -100000 + point.y;
     const rightSide = new PIXI.Graphics().poly([points[0], points[1], points[2], points[3], points[2], points[3] + geo.depth, points[0], points[1] + geo.depth]).fill(known ? '#68472b' : '#080a08');
     const leftSide = new PIXI.Graphics().poly([points[2], points[3], points[4], points[5], points[4], points[5] + geo.depth, points[2], points[3] + geo.depth]).fill(known ? '#4c321f' : '#060806');
-    const base = new PIXI.Graphics().poly(points).fill(known ? '#79a842' : '#0c0f0c');
-    const texture = new PIXI.Sprite(assets.grass);
+    const water = cell.terrain === 'RIVER' || cell.terrain === 'BRIDGE';
+    const base = new PIXI.Graphics().poly(points).fill(known ? (water ? '#3189a8' : '#79a842') : '#0c0f0c');
+    const terrainTexture = cell.terrain === 'RIVER' ? assets.river : cell.terrain === 'BRIDGE' ? assets.bridge : assets.grass;
+    const texture = new PIXI.Sprite(terrainTexture);
     const xValues = points.filter((value, index) => index % 2 === 0);
     const yValues = points.filter((value, index) => index % 2 === 1);
-    texture.anchor.set(.5); texture.width = (Math.max(...xValues) - Math.min(...xValues)) * 1.08; texture.height = (Math.max(...yValues) - Math.min(...yValues)) * 1.08; texture.alpha = known ? .86 : 0;
+    texture.anchor.set(.5); texture.width = (Math.max(...xValues) - Math.min(...xValues)) * 1.08; texture.height = (Math.max(...yValues) - Math.min(...yValues)) * 1.08; texture.alpha = known ? .9 : 0;
     const textureMask = new PIXI.Graphics().poly(points).fill('#ffffff');
     texture.mask = textureMask;
     const border = new PIXI.Graphics().poly(points).stroke({ color:known ? '#92a180' : '#151915', alpha:known ? .5 : 1, width:Math.max(.6, geo.size * .025) });
     if (!cellCoordinates.has(`${cell.coordinate.q + 1}:${cell.coordinate.r}`)) tile.addChild(rightSide);
     if (!cellCoordinates.has(`${cell.coordinate.q}:${cell.coordinate.r + 1}`)) tile.addChild(leftSide);
-    tile.addChild(base, texture, textureMask, border);
+    tile.addChild(base, texture, textureMask);
+    tile.addChild(border);
     pixiApp.stage.addChild(tile);
 }
 
@@ -903,6 +907,7 @@ function eventDescription(event) {
         case 'WOOD_DROPPED': return `${payload.woodQuantity} bois abandonné en ${coordinate(payload.position)}.`;
         case 'WOOD_LOOTED': return `Fagot pillé : +${payload.woodCollected} bois, inventaire ${payload.woodAfter}.`;
         case 'TREE_CUT_DOWN': return `L’arbre en ${coordinate(payload.position)} devient une plaine.`;
+        case 'BRIDGE_BUILT': return `Un pont est construit en ${coordinate(payload.position)} pour ${payload.woodSpent} bois.`;
         case 'HOUSE_BUILT': return `Maison construite en ${coordinate(payload.position)} avec ${payload.woodSpent} bois.`;
         case 'HOUSE_CLAIMED': return `Maison vide prise en possession en ${coordinate(payload.position)}.`;
         case 'FIELD_BUILT': return `Champ construit en ${coordinate(payload.position)} ; première récolte au tour ${payload.readyAtRound}.`;
@@ -1052,7 +1057,7 @@ $('#createForm').addEventListener('submit', async event => {
     const duplicateWorld = state.worlds.find(world => world.name?.trim().toLocaleLowerCase('fr') === data.name.trim().toLocaleLowerCase('fr'));
     if (duplicateWorld) { $('#formError').textContent = `Un monde nomm\u00e9 "${data.name.trim()}" existe d\u00e9j\u00e0.`; return; }
     const number = key => Number(data[key]);
-    const request = { name:data.name.trim(), width:number('width'), height:number('height'), rockPercentage:number('rockPercentage'), treePercentage:number('treePercentage'), foodCellPercentage:number('foodCellPercentage'), minFoodPerCell:number('minFoodPerCell'), maxFoodPerCell:number('maxFoodPerCell'), sheepCount:number('sheepCount'), hungerHealthLossPerTurn:number('hungerHealthLossPerTurn'), maxRounds:number('maxRounds'), teams:[{name:data.redName.trim(),peonCount:number('redCount')},{name:data.blueName.trim(),peonCount:number('blueCount')}] };
+    const request = { name:data.name.trim(), width:number('width'), height:number('height'), rockPercentage:number('rockPercentage'), treePercentage:number('treePercentage'), foodCellPercentage:number('foodCellPercentage'), minFoodPerCell:number('minFoodPerCell'), maxFoodPerCell:number('maxFoodPerCell'), sheepCount:number('sheepCount'), hungerHealthLossPerTurn:number('hungerHealthLossPerTurn'), maxRounds:number('maxRounds'), generateRiver:data.generateRiver === 'on', teams:[{name:data.redName.trim(),peonCount:number('redCount')},{name:data.blueName.trim(),peonCount:number('blueCount')}] };
     try { await api('/api/worlds', { method:'POST', body:JSON.stringify(request) }); dialog.close(); await loadWorlds(true); } catch (error) { $('#formError').textContent = error.message; }
 });
 

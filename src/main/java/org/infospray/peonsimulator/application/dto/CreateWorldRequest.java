@@ -10,7 +10,8 @@ import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
-public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(0) @Max(500) Integer sheepCount, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, @NotEmpty List<@Valid TeamRequest> teams) {
+public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(0) @Max(500) Integer sheepCount, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, Boolean generateRiver, @NotEmpty List<@Valid TeamRequest> teams) {
+    public CreateWorldRequest(String name, Integer width, Integer height, Integer rockPercentage, Integer treePercentage, Integer foodCellPercentage, Integer minFoodPerCell, Integer maxFoodPerCell, Integer sheepCount, Integer hungerHealthLossPerTurn, Integer maxRounds, Long seed, List<TeamRequest> teams) { this(name, width, height, rockPercentage, treePercentage, foodCellPercentage, minFoodPerCell, maxFoodPerCell, sheepCount, hungerHealthLossPerTurn, maxRounds, seed, false, teams); }
     public record TeamRequest(@NotBlank String name, @Min(1) @Max(100) int peonCount) {
     }
 
@@ -25,6 +26,7 @@ public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) 
     public int resolvedHungerLoss() { return this.hungerHealthLossPerTurn == null ? 5 : this.hungerHealthLossPerTurn; }
     public int resolvedMaxRounds() { return this.maxRounds == null ? 100 : this.maxRounds; }
     public long resolvedSeed() { return this.seed == null ? System.currentTimeMillis() : this.seed; }
+    public boolean resolvedGenerateRiver() { return Boolean.TRUE.equals(this.generateRiver); }
 
     @AssertTrue(message = "La somme des pourcentages de roches et d'arbres doit être inférieure à 100 %")
     public boolean isTerrainPercentageValid() { return this.resolvedRockPercentage() + this.resolvedTreePercentage() < 100; }

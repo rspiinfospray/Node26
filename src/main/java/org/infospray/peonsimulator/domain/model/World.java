@@ -22,6 +22,7 @@ public class World {
     private int hungerHealthLossPerTurn;
     private int maxRounds;
     private long seed;
+    private boolean riverGenerationEnabled;
     private int currentRound = 1;
     private int currentActorIndex;
     private long sequenceNumber;
@@ -59,6 +60,7 @@ public class World {
     public int getHungerHealthLossPerTurn() { return this.hungerHealthLossPerTurn; }
     public int getMaxRounds() { return this.maxRounds; }
     public long getSeed() { return this.seed; }
+    public boolean isRiverGenerationEnabled() { return this.riverGenerationEnabled; }
     public int getCurrentRound() { return this.currentRound; }
     public int getCurrentActorIndex() { return this.currentActorIndex; }
     public long getSequenceNumber() { return this.sequenceNumber; }
@@ -92,6 +94,7 @@ public class World {
     public void setHungerHealthLossPerTurn(int value) { this.hungerHealthLossPerTurn = value; }
     public void setMaxRounds(int value) { this.maxRounds = value; }
     public void setSeed(long seed) { this.seed = seed; }
+    public void setRiverGenerationEnabled(boolean value) { this.riverGenerationEnabled = value; }
     public void setCurrentRound(int value) { this.currentRound = value; }
     public void setCurrentActorIndex(int value) { this.currentActorIndex = value; }
     public void setSequenceNumber(long value) { this.sequenceNumber = value; }

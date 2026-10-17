@@ -27,4 +27,20 @@ Les deux fichiers suivants ont été générés ensuite pour supprimer les tranc
 - `terrain-grass-flat.png` : surface d'herbe hexagonale plane, sans paroi, socle ou extrusion, agrandie pour remplir la cellule ;
 - `field-flat.png` : surface de champ hexagonale plane, sans paroi, socle ou extrusion, agrandie pour remplir la cellule.
 
+## Rivière et pont
+
+Les fichiers `terrain-river.png` et `terrain-bridge.png` ont été produits avec les prompts suivants, puis leur fond magenta uniforme a été converti en transparence.
+
+### Rivière
+
+> Create one simple river terrain tile for an isometric RPG game. Use `terrain-grass-flat.png` as the exact style, silhouette, camera-angle, scale and composition reference. The entire diamond-shaped cell is calm blue water flowing continuously from the upper-left edge to the lower-right edge, so identical neighboring tiles connect seamlessly. Use only very small subtle stylized ripples. Clean colorful low-detail 3D RPG style. Same isometric axes and footprint as the reference, filling almost the whole canvas, without soil thickness or raised base. No grass banks, rocks, plants, bridge, land, text or watermark. Render outside the tile on a perfectly uniform solid `#ff00ff` chroma-key background.
+
+### Pont
+
+> Create an isolated isometric RPG terrain tile: a simple sturdy wooden plank bridge over a full diamond-shaped calm blue water tile. The bridge runs exactly from the lower-left edge to the upper-right edge and touches both edges. Use a colorful low-detail RPG style matching `terrain-grass-flat.png` and the river tile, with chunky readable wooden planks and two simple side beams, without railings. Keep the exact clean diamond boundary, with no terrain thickness. Only water and wood inside the tile; no land, grass, rocks, plants, characters, text or watermark. Every pixel outside the diamond must be exactly uniform solid pure `#ff00ff`, without shadow, glow, vignette, gradient or floor plane.
+
+### Correction hexagonale finale
+
+La rivière a ensuite été régénérée en imposant comme invariant le contour extérieur exact à six côtés de `terrain-grass-flat.png`, sans losange à quatre côtés. Le pont final reprend exactement cette tuile hexagonale et demande un véritable ouvrage large et surélevé : tablier cohérent, poutres porteuses, poteaux robustes et garde-corps continus sur les deux côtés. Il traverse la rivière du bord inférieur gauche au bord supérieur droit et conserve l’eau visible de part et d’autre.
+
 Le rendu conserve le style RPG simple, les axes, la projection isométrique, la palette et l'éclairage des images de référence. Chaque surface est centrée sur un fond transparent avec une marge minimale.

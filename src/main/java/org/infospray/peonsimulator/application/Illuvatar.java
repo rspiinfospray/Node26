@@ -94,7 +94,7 @@ public class Illuvatar {
         World world = this.newWorld(request);
         Random random = new Random(world.getSeed());
         this.generateTerrain(world, random);
-        List<Cell> traversableCells = world.getCells().values().stream().filter(cell -> cell.getTerrain() != TerrainType.ROCK).toList();
+        List<Cell> traversableCells = world.getCells().values().stream().filter(cell -> this.isTraversable(cell.getTerrain())).toList();
         if (traversableCells.size() < requestedPeons) {
             throw new IllegalArgumentException("Le monde ne contient pas assez de cases accessibles pour tous les peons");
         }
@@ -239,6 +239,7 @@ public class Illuvatar {
         world.setHungerHealthLossPerTurn(request.hungerHealthLossPerTurn() == null ? this.defaults.getHungerHealthLossPerTurn() : request.hungerHealthLossPerTurn());
         world.setMaxRounds(request.maxRounds() == null ? this.defaults.getMaxRounds() : request.maxRounds());
         world.setSeed(request.resolvedSeed());
+        world.setRiverGenerationEnabled(request.resolvedGenerateRiver());
         return world;
     }
 
@@ -268,6 +269,24 @@ public class Illuvatar {
         Cell center = world.cell(centerCoordinate);
         Set<String> reachable = this.reachablePlainKeys(world, center.getCoordinate());
         world.getCells().forEach((key, cell) -> { if (cell.getTerrain() != TerrainType.ROCK && !reachable.contains(key)) { cell.setTerrain(TerrainType.ROCK); } });
+        if (world.isRiverGenerationEnabled()) { this.generateRiver(world, random); }
+    }
+
+    private void generateRiver(World world, Random random) {
+        int minQ = world.getCells().values().stream().mapToInt(cell -> cell.getCoordinate().q()).min().orElse(0);
+        int maxQ = world.getCells().values().stream().mapToInt(cell -> cell.getCoordinate().q()).max().orElse(0);
+        List<Cell> starts = world.getCells().values().stream().filter(cell -> cell.getCoordinate().q() == minQ).toList();
+        HexCoordinate current = starts.get(random.nextInt(starts.size())).getCoordinate();
+        world.cell(current).setTerrain(TerrainType.RIVER);
+        world.cell(current).setFoodQuantity(0);
+        while (current.q() < maxQ) {
+            int nextQ = current.q() + 1;
+            List<HexCoordinate> candidates = current.neighbors().stream().filter(world::contains).filter(coordinate -> coordinate.q() == nextQ).toList();
+            if (candidates.isEmpty()) { throw new IllegalStateException("Impossible de générer une rivière traversante"); }
+            current = candidates.get(random.nextInt(candidates.size()));
+            world.cell(current).setTerrain(TerrainType.RIVER);
+            world.cell(current).setFoodQuantity(0);
+        }
     }
 
     private Set<String> selectClusteredTerrainKeys(List<Cell> candidates, int requestedCount, Random random) {
@@ -356,7 +375,7 @@ public class Illuvatar {
         House house = world.houseAt(peon.getPosition());
         List<PeonDecisionContext.ObservedPeon> occupants = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getInsideHouseId() == null || other.getInsideHouseId().equals(peon.getInsideHouseId())).map(other -> new PeonDecisionContext.ObservedPeon(other.getId(), other.getTeamId(), other.getHealthPoints(), other.getMaxHealthPoints(), other.getLevel(), other.itemCount(ItemType.WOOD), other.itemCount(ItemType.FOOD))).toList();
         List<Peon> alliedPeons = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getTeamId().equals(peon.getTeamId())).toList();
-        List<HexCoordinate> neighbors = peon.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> { RememberedCell remembered = peon.getMentalMap().get(World.key(coordinate)); return remembered != null && remembered.getTerrain() != TerrainType.ROCK; }).toList();
+        List<HexCoordinate> neighbors = peon.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> { RememberedCell remembered = peon.getMentalMap().get(World.key(coordinate)); return remembered != null && this.isTraversable(remembered.getTerrain()); }).toList();
         Peon houseHost = house == null || house.getHostPeonId() == null ? null : world.getPeons().get(house.getHostPeonId());
         PeonDecisionContext.ObservedHouse observedHouse = house == null ? null : new PeonDecisionContext.ObservedHouse(house.getId(), house.getHostPeonId(), houseHost == null ? null : houseHost.getTeamId(), house.getPosition(), house.contains(peon.getId()), house.isOwned());
         List<PeonDecisionContext.ObservedHouse> knownHouses = peon.getMentalMap().values().stream().map(RememberedCell::getRememberedHouse).filter(java.util.Objects::nonNull).map(remembered -> new PeonDecisionContext.ObservedHouse(remembered.houseId(), null, remembered.hostTeamId(), remembered.position(), false, remembered.occupied())).toList();
@@ -400,6 +419,7 @@ public class Illuvatar {
             case CONSTRUIRE_MAISON -> this.buildHouse(world, actor, request, events, index);
             case CONSTRUIRE_CHAMP -> this.buildField(world, actor, request, events, index);
             case CONSTRUIRE_GRENIER -> this.buildGranary(world, actor, request, events, index);
+            case CONSTRUIRE_PONT -> this.buildBridge(world, actor, request, events, index);
             case RECOLTER -> this.harvest(world, actor, request, events, index);
             case PILLER -> this.loot(world, actor, request, events, index);
             case NE_RIEN_FAIRE -> events.add(this.event(world, request, actor, "PEON_IDLED", index, Map.of()));
@@ -433,7 +453,7 @@ public class Illuvatar {
 
     private void move(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         HexCoordinate destination = request.action().destination();
-        if (destination == null || actor.getPosition().distanceTo(destination) != 1 || !world.contains(destination) || world.cell(destination).getTerrain() == TerrainType.ROCK) { this.reject(world, actor, request, events, index, "INVALID_DESTINATION"); return; }
+        if (destination == null || actor.getPosition().distanceTo(destination) != 1 || !world.contains(destination) || !this.isTraversable(world.cell(destination).getTerrain())) { this.reject(world, actor, request, events, index, "INVALID_DESTINATION"); return; }
         HexCoordinate origin = actor.getPosition();
         this.leaveHouse(world, actor, request, events, index);
         world.cell(origin).removeOccupant(actor.getId());
@@ -583,6 +603,15 @@ public class Illuvatar {
         world.getGranaries().put(granary.getId(), granary);
         events.add(this.event(world, request, actor, "GRANARY_BUILT", index, Map.of("granaryId", granary.getId(), "position", granary.getPosition(), "capacity", this.defaults.getGranaryCapacity())));
         this.gainExperience(world, actor, request, events, index, this.defaults.getBuildGranaryExperienceGain());
+    }
+
+    private void buildBridge(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        HexCoordinate destination = request.action().destination();
+        if (destination == null || actor.getPosition().distanceTo(destination) != 1 || !world.contains(destination) || world.cell(destination).getTerrain() != TerrainType.RIVER) { this.reject(world, actor, request, events, index, "INVALID_BRIDGE_SITE"); return; }
+        if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForBridge())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
+        world.cell(destination).setTerrain(TerrainType.BRIDGE);
+        events.add(this.event(world, request, actor, "BRIDGE_BUILT", index, Map.of("position", destination, "woodSpent", this.defaults.getWoodRequiredForBridge(), "woodAfter", actor.itemCount(ItemType.WOOD))));
+        this.observe(world, actor, world.getSequenceNumber());
     }
 
     private void harvest(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -767,7 +796,7 @@ public class Illuvatar {
         for (Sheep sheep : world.getSheep().values()) {
             Random random = new Random(world.getSeed() ^ completedRound * 31L ^ sheep.getId().getMostSignificantBits());
             if (random.nextInt(100) >= this.defaults.getSheepMovementPercentage()) { continue; }
-            List<HexCoordinate> destinations = sheep.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> world.cell(coordinate).getTerrain() != TerrainType.ROCK).filter(coordinate -> world.houseAt(coordinate) == null).toList();
+            List<HexCoordinate> destinations = sheep.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> this.isTraversable(world.cell(coordinate).getTerrain())).filter(coordinate -> world.houseAt(coordinate) == null).toList();
             if (destinations.isEmpty()) { continue; }
             HexCoordinate origin = sheep.getPosition();
             HexCoordinate destination = destinations.get(random.nextInt(destinations.size()));
@@ -803,6 +832,8 @@ public class Illuvatar {
         }
         return true;
     }
+
+    private boolean isTraversable(TerrainType terrain) { return terrain != TerrainType.ROCK && terrain != TerrainType.RIVER; }
 
     private HexCoordinate roundAxial(double q, double r) {
         double x = q;

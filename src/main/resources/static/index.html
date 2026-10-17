@@ -49,7 +49,7 @@
                 <p>Créez un monde pour laisser Illuvatar commencer son œuvre.</p>
                 <button id="emptyCreateButton" class="button primary">Créer le monde</button>
             </div>
-            <div class="legend"><span><i class="plain"></i>Plaine</span><span><i class="rock"></i>Roche</span><span><i class="tree"></i>Arbre</span><span><i class="food"></i>Baies</span><span><i class="sheep"></i>Mouton</span><span><i class="grave"></i>Tombe</span><span><i class="house"></i>Maison</span><span><i class="field"></i>Champ</span><span><i class="granary"></i>Grenier</span><span><i class="wood-bundle"></i>Bois</span></div>
+            <div class="legend"><span><i class="plain"></i>Plaine</span><span><i class="river"></i>Rivière</span><span><i class="bridge"></i>Pont</span><span><i class="rock"></i>Roche</span><span><i class="tree"></i>Arbre</span><span><i class="food"></i>Baies</span><span><i class="sheep"></i>Mouton</span><span><i class="grave"></i>Tombe</span><span><i class="house"></i>Maison</span><span><i class="field"></i>Champ</span><span><i class="granary"></i>Grenier</span><span><i class="wood-bundle"></i>Bois</span></div>
         </div>
         <div class="timeline">
             <strong class="timeline-title">Historique</strong>
@@ -133,6 +133,7 @@
                 <div class="form-grid">
                     <label>Roches (%)<input name="rockPercentage" type="number" min="0" max="60" step="1" value="20"></label>
                     <label>Arbres (%)<input name="treePercentage" type="number" min="0" max="60" step="1" value="15"></label>
+                    <label class="form-wide"><input name="generateRiver" type="checkbox"> Générer une rivière traversante</label>
                     <label class="form-wide">Cases avec nourriture (%)<input name="foodCellPercentage" type="number" min="0" max="100" step="1" value="15"></label>
                     <label>Quantité de nourriture min.<input name="minFoodPerCell" type="number" min="1" value="1"></label>
                     <label>Quantité de nourriture max.<input name="maxFoodPerCell" type="number" min="1" value="3"></label>
