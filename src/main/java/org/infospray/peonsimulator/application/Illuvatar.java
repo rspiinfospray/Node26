@@ -615,6 +615,7 @@ public class Illuvatar {
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForBridge())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         world.cell(destination).setTerrain(TerrainType.BRIDGE);
         events.add(this.event(world, request, actor, "BRIDGE_BUILT", index, Map.of("position", destination, "woodSpent", this.defaults.getWoodRequiredForBridge(), "woodAfter", actor.itemCount(ItemType.WOOD))));
+        this.gainExperience(world, actor, request, events, index, this.defaults.getBuildBridgeExperienceGain());
         this.observe(world, actor, world.getSequenceNumber());
     }
 

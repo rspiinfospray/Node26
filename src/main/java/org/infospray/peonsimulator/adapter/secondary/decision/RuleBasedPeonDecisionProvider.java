@@ -205,6 +205,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
 
     private WeightedAction scoreBuildBridge(PeonDecisionContext context, HexCoordinate destination, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
+        factors.put("expérience", this.defaults.getBuildBridgeExperienceGain() * 0.45);
         factors.put("nouveau passage", 62.0);
         factors.put("ingéniosité", context.personality().getIngenuity() * 0.45);
         factors.put("exploration", context.personality().getCuriosity() * 0.25);
@@ -551,6 +552,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             case CONSTRUIRE_MAISON -> this.defaults.getBuildHouseExperienceGain();
             case CONSTRUIRE_CHAMP -> this.defaults.getBuildFieldExperienceGain();
             case CONSTRUIRE_GRENIER -> this.defaults.getBuildGranaryExperienceGain();
+            case CONSTRUIRE_PONT -> this.defaults.getBuildBridgeExperienceGain();
             case RECOLTER -> this.defaults.getHarvestExperienceGain();
             case PILLER -> this.defaults.getLootExperienceGain();
             default -> 0;

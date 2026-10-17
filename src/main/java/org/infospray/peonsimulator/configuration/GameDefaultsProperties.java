@@ -54,6 +54,7 @@ public class GameDefaultsProperties {
     private int woodRequiredForField = 50;
     private int woodRequiredForGranary = 100;
     private int woodRequiredForBridge = 50;
+    private int buildBridgeExperienceGain = 50;
     private int fieldGrowthRounds = 8;
     private int fieldWheatYield = 5;
     private int granaryCapacity = 50;
@@ -161,6 +162,8 @@ public class GameDefaultsProperties {
     public void setWoodRequiredForGranary(int value) { this.woodRequiredForGranary = value; }
     public int getWoodRequiredForBridge() { return this.woodRequiredForBridge; }
     public void setWoodRequiredForBridge(int value) { this.woodRequiredForBridge = value; }
+    public int getBuildBridgeExperienceGain() { return this.buildBridgeExperienceGain; }
+    public void setBuildBridgeExperienceGain(int value) { this.buildBridgeExperienceGain = value; }
     public int getFieldGrowthRounds() { return this.fieldGrowthRounds; }
     public void setFieldGrowthRounds(int value) { this.fieldGrowthRounds = value; }
     public int getFieldWheatYield() { return this.fieldWheatYield; }

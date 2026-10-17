@@ -30,6 +30,17 @@ import static org.mockito.Mockito.when;
 
 class IlluvatarBridgeTest {
     @Test
+    void shouldGrantExperienceWhenBridgeIsBuilt() {
+        BridgeFixture fixture = this.fixture();
+
+        fixture.illuvatar().processAction(fixture.request());
+
+        assertThat(fixture.world().cell(fixture.destination()).getTerrain()).isEqualTo(TerrainType.BRIDGE);
+        assertThat(fixture.peon().getExperiencePoints()).isEqualTo(50);
+        verify(fixture.eventRepository()).appendAll(argThat(events -> events.stream().anyMatch(event -> "PEON_EXPERIENCE_GAINED".equals(event.eventType()) && Integer.valueOf(50).equals(event.payload().get("amount")))));
+    }
+
+    @Test
     void shouldRejectBridgeWhenOppositeBankIsRock() {
         BridgeFixture fixture = this.fixture();
         HexCoordinate oppositeBank = new HexCoordinate(2, 0);
