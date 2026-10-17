@@ -620,6 +620,12 @@ En production, le scheduler doit être séparé logiquement des instances d'API,
 - Chaque nouveau champ est rattaché durablement au grenier allié le plus proche dans le rayon autorisé. L'inspecteur du grenier affiche son équipe, son stock et cette exploitation, et relie visuellement le grenier à ses champs sur la carte.
 - Chaque maison possédée, champ et grenier exerce une influence sur toutes les cases situées à une distance hexagonale maximale de 2. Une équipe ne peut construire aucune maison, aucun champ et aucun grenier dans la zone d'influence d'une construction ennemie ; les constructions alliées ne se bloquent pas. La sélection d'une construction affiche cette zone sur la carte dans la couleur de son équipe.
 
+### Inventaire alimentaire et échanges
+
+Chaque type de ressource de l'inventaire individuel est plafonné à `300` unités. Le bois et la nourriture occupent des compteurs distincts. Lorsqu'un aliment apporte davantage de PV qu'il n'en manque au peon, les points de soin excédentaires deviennent autant d'unités de nourriture dans son inventaire ; seule la part dépassant également la capacité de `300` est perdue. Un peon blessé peut consommer directement cette réserve, à raison d'une unité de nourriture pour un PV.
+
+Les dons, demandes de nourriture et trocs exigent que les deux peons alliés se trouvent sur la même case et dans le même espace de maison. Un don transfère une quantité adaptée au besoin du destinataire et à la solidarité du donneur. Une demande peut être acceptée ou refusée selon la solidarité, l'ingéniosité et la prudence du donneur. Le troc échange toujours une unité de nourriture contre une unité de bois ; la quantité dépend des stocks, des capacités restantes et de l'ingéniosité, tandis que l'acceptation dépend de la personnalité du partenaire. Chaque proposition, acceptation, refus et transfert produit un événement explicite.
+
 ## 16. Planification stratégique des peons
 
 Chaque `Peon` persiste un `LongTermStrategy` dans l'état du monde et les snapshots. Cette stratégie contient son type, son statut, sa phase, son horizon, sa période d'engagement, ses cibles, ses objectifs chiffrés, sa progression, son objectif tactique et sa prochaine priorité.

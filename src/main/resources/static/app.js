@@ -817,6 +817,7 @@ function renderPeon() {
     $('#positionValue').textContent = `${peon.position.q}, ${peon.position.r}`;
     $('#memoryValue').textContent = Object.keys(peon.mentalMap || {}).length;
     $('#woodValue').textContent = peon.inventory?.WOOD || 0;
+    $('#foodInventoryValue').textContent = peon.inventory?.FOOD || 0;
     $('#shelterValue').textContent = peon.insideHouseId ? 'À l’abri dans une maison · faim réduite de moitié' : 'À l’extérieur';
     renderLongTermStrategy(peon);
     renderPersonality(peon);
@@ -876,9 +877,9 @@ function renderEvents() {
 
 function visibleEvents() { return state.events.filter(event => event.sequenceNumber <= (state.world?.sequenceNumber ?? 0)); }
 function peonName(peonId) { return peonId ? state.world?.peons?.[peonId]?.firstName || state.liveWorld?.peons?.[peonId]?.firstName || `Peon ${peonId.slice(0, 8)}` : null; }
-function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger des baies', MANGER_MOUTON:'Manger un mouton', MANGER_BLE:'Manger du blé', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', CONSTRUIRE_CHAMP:'Construire un champ', CONSTRUIRE_GRENIER:'Construire un grenier', RECOLTER:'Récolter le blé', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
+function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger des baies', MANGER_MOUTON:'Manger un mouton', MANGER_BLE:'Manger du blé', MANGER_RESERVE:'Manger sa réserve', DONNER_NOURRITURE:'Donner de la nourriture', DEMANDER_NOURRITURE:'Demander de la nourriture', TROQUER_NOURRITURE_CONTRE_BOIS:'Troquer nourriture contre bois', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', CONSTRUIRE_CHAMP:'Construire un champ', CONSTRUIRE_GRENIER:'Construire un grenier', RECOLTER:'Récolter le blé', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
 function friendlyPurpose(purpose) { return ({ SURVIVRE:'survivre', GAGNER_DES_NIVEAUX:'gagner des niveaux', AIDER_LES_ALLIES:'aider les autres peons' })[purpose] || purpose?.replaceAll('_', ' ').toLowerCase(); }
-function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', NO_WOOD_BUNDLE:'aucun fagot de bois sur la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', ENEMY_CONSTRUCTION_INFLUENCE:'zone d’influence d’une construction ennemie', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
+function friendlyReason(reason) { return ({ HUNGER:'faim', ATTACK:'attaque', MOVEMENT:'coût du déplacement', NO_FOOD:'aucune nourriture sur la case', NO_WOOD_BUNDLE:'aucun fagot de bois sur la case', NO_USEFUL_STORED_FOOD:'aucune nourriture stockée utile', NO_FOOD_TO_GIVE:'aucune nourriture disponible à donner', INVENTORY_FULL:'inventaire plein', INVALID_ALLIED_TRADE_TARGET:'partenaire allié absent de la case', INVALID_DESTINATION:'destination inaccessible', INVALID_TARGET:'cible invalide', NO_ALLY_IN_RANGE:'aucun allié sur la case', ENEMY_CONSTRUCTION_INFLUENCE:'zone d’influence d’une construction ennemie', PEON_NOT_ALIVE:'le peon est mort', NO_SURVIVORS:'aucun survivant', MAX_ROUNDS_REACHED:'nombre maximal de tours atteint' })[reason] || reason?.replaceAll('_', ' ').toLowerCase(); }
 function coordinate(value) { return value ? `(${value.q}, ${value.r})` : ''; }
 function eventDescription(event) {
     const payload = event.payload || {};
@@ -887,7 +888,7 @@ function eventDescription(event) {
         case 'PEON_MOVED': return `Déplacement de ${coordinate(payload.from)} vers ${coordinate(payload.to)}.`;
         case 'PEON_SAW': return `${payload.visibleCells ?? 0} case(s) visible(s) autour du peon.`;
         case 'FOOD_CONSUMED': return `Nourriture en ${coordinate(payload.position)} : ${payload.quantityBefore} → ${payload.quantityAfter}.`;
-        case 'PEON_ATE': return `PV : ${payload.healthBefore} → ${payload.healthAfter}.`;
+        case 'PEON_ATE': return `PV : ${payload.healthBefore} → ${payload.healthAfter} · ${payload.foodStored || 0} nourriture stockée, réserve ${payload.foodInventory || 0}.`;
         case 'SHEEP_EATEN': return `Mouton mangé en ${coordinate(payload.position)} : PV ${payload.healthBefore} → ${payload.healthAfter}, puis gain de 30 XP.`;
         case 'SHEEP_MOVED': return `Le mouton se déplace de ${coordinate(payload.from)} vers ${coordinate(payload.to)}.`;
         case 'PEON_ATTACKED': return `${peonName(event.peonId)} attaque ${peonName(payload.targetPeonId)} : ${payload.damage} dégâts, PV ${payload.healthBefore} → ${payload.healthAfter}${payload.lethal ? ` · coup mortel, ${payload.attackerExperienceGain} XP pour le vainqueur` : ` · ${payload.attackerExperienceGain ?? 40} XP pour l’attaquant`}.`;
@@ -909,6 +910,14 @@ function eventDescription(event) {
         case 'GRANARY_BUILT': return `Grenier construit en ${coordinate(payload.position)} (capacité ${payload.capacity}).`;
         case 'WHEAT_HARVESTED': return `${payload.quantity} blés récoltés et déposés au grenier (${payload.storedWheat} stockés).`;
         case 'WHEAT_EATEN': return `Blé mangé : PV ${payload.healthBefore} → ${payload.healthAfter}, reste ${payload.storedWheat}.`;
+        case 'STORED_FOOD_EATEN': return `${payload.quantity} nourriture consommée depuis l’inventaire : PV ${payload.healthBefore} → ${payload.healthAfter}.`;
+        case 'FOOD_GIVEN': return `${payload.quantity} nourriture donnée à ${peonName(payload.recipientPeonId)}.`;
+        case 'FOOD_REQUESTED': return `Nourriture demandée à ${peonName(payload.donorPeonId)}.`;
+        case 'FOOD_REQUEST_ACCEPTED': return `${peonName(event.peonId)} donne ${payload.quantity} nourriture à ${peonName(payload.requesterPeonId)}.`;
+        case 'FOOD_REQUEST_REFUSED': return `${peonName(event.peonId)} refuse de donner sa nourriture à ${peonName(payload.requesterPeonId)}.`;
+        case 'RESOURCE_TRADE_PROPOSED': return `Troc proposé à ${peonName(payload.partnerPeonId)} : ${payload.foodOffered} nourriture contre ${payload.woodRequested} bois.`;
+        case 'RESOURCE_TRADE_COMPLETED': return `Troc conclu avec ${peonName(payload.partnerPeonId)} : ${payload.foodQuantity} nourriture contre ${payload.woodQuantity} bois.`;
+        case 'RESOURCE_TRADE_REFUSED': return `${peonName(event.peonId)} refuse le troc proposé par ${peonName(payload.requesterPeonId)}.`;
         case 'PEON_ENTERED_HOUSE': return 'Le peon entre dans la maison.';
         case 'PEON_LEFT_HOUSE': return 'Le peon quitte la maison.';
         case 'HOUSE_EMPTIED': return 'La maison devient vide et peut être reprise.';
@@ -925,7 +934,7 @@ function eventDescription(event) {
     }
 }
 
-function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Baies consommées', SHEEP_EATEN:'Mouton mangé', SHEEP_MOVED:'Déplacement d’un mouton', WHEAT_EATEN:'Blé mangé', WHEAT_HARVESTED:'Récolte de blé', FIELD_BUILT:'Champ construit', FIELD_RIPENED:'Champ mûr', GRANARY_BUILT:'Grenier construit', HOUSE_BECAME_UNOWNED:'Maison sans propriétaire', HOUSE_OWNERSHIP_TRANSFERRED:'Propriété de maison transmise', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
+function friendlyEvent(type) { return ({ PEON_DECISION_MADE:'Décision prise', PEON_MOVED:'Déplacement', PEON_MOVEMENT_COST_APPLIED:'Coût du déplacement', PEON_SAW:'Observation', PEON_ATE:'Repas', FOOD_CONSUMED:'Baies consommées', SHEEP_EATEN:'Mouton mangé', SHEEP_MOVED:'Déplacement d’un mouton', WHEAT_EATEN:'Blé mangé', STORED_FOOD_EATEN:'Réserve consommée', FOOD_GIVEN:'Don de nourriture', FOOD_REQUESTED:'Demande de nourriture', FOOD_REQUEST_ACCEPTED:'Don accepté', FOOD_REQUEST_REFUSED:'Don refusé', RESOURCE_TRADE_PROPOSED:'Troc proposé', RESOURCE_TRADE_COMPLETED:'Troc conclu', RESOURCE_TRADE_REFUSED:'Troc refusé', WHEAT_HARVESTED:'Récolte de blé', FIELD_BUILT:'Champ construit', FIELD_RIPENED:'Champ mûr', GRANARY_BUILT:'Grenier construit', HOUSE_BECAME_UNOWNED:'Maison sans propriétaire', HOUSE_OWNERSHIP_TRANSFERRED:'Propriété de maison transmise', PEON_ATTACKED:'Attaque', PEON_EXPERIENCE_GAINED:'Expérience gagnée', PEON_LEVELED_UP:'Niveau supérieur', PEON_LEVEL_UP_HEAL_APPLIED:'Soin de niveau', PEON_HUNGER_APPLIED:'Effet de la faim', PEON_DIED:'Mort d’un peon', PEON_COMMUNICATED:'Communication', PEON_CHOPPED_WOOD:'Récolte de bois', WOOD_DROPPED:'Bois abandonné', WOOD_LOOTED:'Fagot pillé', PEON_IDLED:'Inactivité', PEON_LEARNED:'Leçon apprise', PEON_TURN_COMPLETED:'Action du peon terminée', WORLD_FINISHED:'Monde terminé', PEON_ACTION_REJECTED:'Action impossible' })[type] || type.replaceAll('_', ' ').toLowerCase(); }
 
 function escapeHtml(value) {
     const element = document.createElement('span');

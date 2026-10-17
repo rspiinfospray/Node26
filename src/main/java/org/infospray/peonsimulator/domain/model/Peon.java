@@ -9,6 +9,7 @@ import java.util.UUID;
 
 @JsonPropertyOrder({"id", "firstName", "teamId", "maxHealthPoints", "healthPoints"})
 public class Peon {
+    public static final int MAX_ITEM_QUANTITY = 300;
     private UUID id;
     private String firstName;
     private UUID teamId;
@@ -91,14 +92,16 @@ public class Peon {
     public void setExperienceBeforeDecision(int value) { this.experienceBeforeDecision = value; }
     public void setKnownCellsBeforeDecision(int value) { this.knownCellsBeforeDecision = value; }
     public void setLastObservationRound(int value) { this.lastObservationRound = value; }
-    public void setInventory(Map<ItemType, Integer> value) { this.inventory = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
+    public void setInventory(Map<ItemType, Integer> value) { this.inventory = new LinkedHashMap<>(); if (value != null) { value.forEach((type, quantity) -> this.inventory.put(type, Math.max(0, Math.min(MAX_ITEM_QUANTITY, quantity)))); } }
     public void setInsideHouseId(UUID value) { this.insideHouseId = value; }
     public void setLongTermStrategy(LongTermStrategy value) { this.longTermStrategy = value; }
     public void setKnownAllyStrategies(Map<UUID, StrategyCommitment> value) { this.knownAllyStrategies = value == null ? new LinkedHashMap<>() : new LinkedHashMap<>(value); }
     public void rememberAllyStrategy(Peon ally, int currentRound) { if (ally.getLongTermStrategy() != null) { this.knownAllyStrategies.put(ally.getId(), new StrategyCommitment(ally.getId(), ally.getLongTermStrategy().getType(), currentRound)); } }
     public int itemCount(ItemType type) { return this.inventory.getOrDefault(type, 0); }
-    public void addItem(ItemType type, int quantity) { this.inventory.merge(type, Math.max(0, quantity), Integer::sum); }
+    public int remainingCapacity(ItemType type) { return MAX_ITEM_QUANTITY - this.itemCount(type); }
+    public int addItem(ItemType type, int quantity) { int accepted = Math.min(Math.max(0, quantity), this.remainingCapacity(type)); this.inventory.put(type, this.itemCount(type) + accepted); return accepted; }
     public boolean removeItem(ItemType type, int quantity) { int current = this.itemCount(type); if (quantity < 0 || current < quantity) { return false; } this.inventory.put(type, current - quantity); return true; }
+    public int transferItemTo(Peon recipient, ItemType type, int quantity) { int transferred = Math.min(Math.max(0, quantity), Math.min(this.itemCount(type), recipient.remainingCapacity(type))); if (transferred == 0) { return 0; } this.removeItem(type, transferred); recipient.addItem(type, transferred); return transferred; }
     public void heal(int amount) { this.setHealthPoints(this.healthPoints + amount); }
     public void hurt(int amount) { this.setHealthPoints(this.healthPoints - amount); }
     public int gainExperience(int amount, int maxHealthGainPerLevel, int attackDamageGainPerLevel) {

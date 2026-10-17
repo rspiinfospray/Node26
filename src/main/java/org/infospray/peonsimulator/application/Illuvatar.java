@@ -354,7 +354,7 @@ public class Illuvatar {
     private PeonDecisionContext buildDecisionContext(World world, Peon peon) {
         Cell current = world.cell(peon.getPosition());
         House house = world.houseAt(peon.getPosition());
-        List<PeonDecisionContext.ObservedPeon> occupants = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getInsideHouseId() == null || other.getInsideHouseId().equals(peon.getInsideHouseId())).map(other -> new PeonDecisionContext.ObservedPeon(other.getId(), other.getTeamId(), other.getHealthPoints(), other.getLevel())).toList();
+        List<PeonDecisionContext.ObservedPeon> occupants = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getInsideHouseId() == null || other.getInsideHouseId().equals(peon.getInsideHouseId())).map(other -> new PeonDecisionContext.ObservedPeon(other.getId(), other.getTeamId(), other.getHealthPoints(), other.getMaxHealthPoints(), other.getLevel(), other.itemCount(ItemType.WOOD), other.itemCount(ItemType.FOOD))).toList();
         List<Peon> alliedPeons = current.getOccupantPeonIds().stream().filter(id -> !id.equals(peon.getId())).map(world.getPeons()::get).filter(java.util.Objects::nonNull).filter(Peon::isAlive).filter(other -> other.getTeamId().equals(peon.getTeamId())).toList();
         List<HexCoordinate> neighbors = peon.getPosition().neighbors().stream().filter(world::contains).filter(coordinate -> { RememberedCell remembered = peon.getMentalMap().get(World.key(coordinate)); return remembered != null && remembered.getTerrain() != TerrainType.ROCK; }).toList();
         Peon houseHost = house == null || house.getHostPeonId() == null ? null : world.getPeons().get(house.getHostPeonId());
@@ -379,7 +379,7 @@ public class Illuvatar {
         boolean sameTeamHouseNearby = world.getHouses().values().stream().filter(candidate -> candidate.getPosition().distanceTo(peon.getPosition()) >= 1 && candidate.getPosition().distanceTo(peon.getPosition()) <= 2).flatMap(candidate -> candidate.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(peon.getTeamId()));
         boolean alliedGranaryNearFieldSite = world.hasAlliedGranaryWithin(peon.getPosition(), peon.getTeamId(), this.defaults.getFieldGranaryRadius());
         int livingTeamPeonCount = (int) world.alivePeons().stream().filter(ally -> ally.getTeamId().equals(peon.getTeamId())).count();
-        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable && alliedGranaryNearFieldSite, buildable && sameTeamHouseNearby, livingTeamPeonCount, peon.getLongTermStrategy());
+        return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), peon.itemCount(ItemType.FOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable && alliedGranaryNearFieldSite, buildable && sameTeamHouseNearby, livingTeamPeonCount, peon.getLongTermStrategy());
     }
 
     private void resolveAction(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
@@ -389,6 +389,10 @@ public class Illuvatar {
             case MANGER -> this.eat(world, actor, request, events, index);
             case MANGER_MOUTON -> this.eatSheep(world, actor, request, events, index);
             case MANGER_BLE -> this.eatWheat(world, actor, request, events, index);
+            case MANGER_RESERVE -> this.eatStoredFood(world, actor, request, events, index);
+            case DONNER_NOURRITURE -> this.giveFood(world, actor, request, events, index);
+            case DEMANDER_NOURRITURE -> this.requestFood(world, actor, request, events, index);
+            case TROQUER_NOURRITURE_CONTRE_BOIS -> this.tradeFoodForWood(world, actor, request, events, index);
             case SE_DEPLACER -> this.move(world, actor, request, events, index);
             case ATTAQUER -> this.attack(world, actor, request, events, index);
             case COMMUNIQUER -> this.communicate(world, actor, request, events, index);
@@ -408,9 +412,9 @@ public class Illuvatar {
         int foodBefore = cell.getFoodQuantity();
         int healthBefore = actor.getHealthPoints();
         cell.consumeFood();
-        actor.heal(this.defaults.getEatHealthGain());
+        int[] foodResult = this.applyFoodHealing(actor, this.defaults.getEatHealthGain());
         events.add(this.event(world, request, actor, "FOOD_CONSUMED", index, Map.of("position", actor.getPosition(), "quantityBefore", foodBefore, "quantityAfter", cell.getFoodQuantity())));
-        events.add(this.event(world, request, actor, "PEON_ATE", index, Map.of("healthBefore", healthBefore, "healthAfter", actor.getHealthPoints())));
+        events.add(this.event(world, request, actor, "PEON_ATE", index, Map.of("healthBefore", healthBefore, "healthAfter", actor.getHealthPoints(), "healing", foodResult[0], "foodStored", foodResult[1], "foodDiscarded", foodResult[2], "foodInventory", actor.itemCount(ItemType.FOOD))));
         this.gainExperience(world, actor, request, events, index, this.defaults.getEatExperienceGain());
         this.remember(world, actor, cell, true, world.getSequenceNumber());
     }
@@ -421,8 +425,8 @@ public class Illuvatar {
         int healthBefore = actor.getHealthPoints();
         world.getSheep().remove(sheep.getId());
         actor.getMentalMap().values().forEach(memory -> memory.setRememberedSheepIds(memory.getRememberedSheepIds().stream().filter(id -> !id.equals(sheep.getId())).toList()));
-        actor.heal(this.defaults.getSheepHealthGain());
-        events.add(this.event(world, request, actor, "SHEEP_EATEN", index, Map.of("sheepId", sheep.getId(), "position", actor.getPosition(), "healthBefore", healthBefore, "healthAfter", actor.getHealthPoints())));
+        int[] foodResult = this.applyFoodHealing(actor, this.defaults.getSheepHealthGain());
+        events.add(this.event(world, request, actor, "SHEEP_EATEN", index, Map.of("sheepId", sheep.getId(), "position", actor.getPosition(), "healthBefore", healthBefore, "healthAfter", actor.getHealthPoints(), "healing", foodResult[0], "foodStored", foodResult[1], "foodDiscarded", foodResult[2], "foodInventory", actor.itemCount(ItemType.FOOD))));
         this.gainExperience(world, actor, request, events, index, this.defaults.getSheepExperienceGain());
         this.remember(world, actor, world.cell(actor.getPosition()), true, world.getSequenceNumber());
     }
@@ -516,8 +520,9 @@ public class Illuvatar {
     private void chopWood(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         Cell cell = world.cell(actor.getPosition());
         if (cell.getTerrain() != TerrainType.TREE || cell.getTreeHealthPoints() <= 0) { this.reject(world, actor, request, events, index, "NO_TREE"); return; }
+        if (actor.remainingCapacity(ItemType.WOOD) == 0) { this.reject(world, actor, request, events, index, "INVENTORY_FULL"); return; }
         int healthBefore = cell.getTreeHealthPoints();
-        int collected = cell.chopTree(this.defaults.getWoodPerChop());
+        int collected = cell.chopTree(Math.min(this.defaults.getWoodPerChop(), actor.remainingCapacity(ItemType.WOOD)));
         actor.addItem(ItemType.WOOD, collected);
         events.add(this.event(world, request, actor, "PEON_CHOPPED_WOOD", index, Map.of("position", actor.getPosition(), "treeHealthBefore", healthBefore, "treeHealthAfter", cell.getTreeHealthPoints(), "woodCollected", collected, "woodAfter", actor.itemCount(ItemType.WOOD))));
         if (cell.getTerrain() == TerrainType.PLAIN) { events.add(this.event(world, request, actor, "TREE_CUT_DOWN", index, Map.of("position", actor.getPosition()))); }
@@ -544,9 +549,13 @@ public class Illuvatar {
     private void loot(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         List<WoodBundle> bundles = world.getWoodBundles().values().stream().filter(bundle -> bundle.position().equals(actor.getPosition())).toList();
         if (bundles.isEmpty()) { this.reject(world, actor, request, events, index, "NO_WOOD_BUNDLE"); return; }
-        int quantity = bundles.stream().mapToInt(WoodBundle::quantity).sum();
+        int available = bundles.stream().mapToInt(WoodBundle::quantity).sum();
+        int quantity = Math.min(available, actor.remainingCapacity(ItemType.WOOD));
+        if (quantity == 0) { this.reject(world, actor, request, events, index, "INVENTORY_FULL"); return; }
         bundles.forEach(bundle -> world.getWoodBundles().remove(bundle.id()));
         actor.addItem(ItemType.WOOD, quantity);
+        int remaining = available - quantity;
+        if (remaining > 0) { WoodBundle remainder = new WoodBundle(UUID.randomUUID(), actor.getPosition(), remaining); world.getWoodBundles().put(remainder.id(), remainder); }
         events.add(this.event(world, request, actor, "WOOD_LOOTED", index, Map.of("position", actor.getPosition(), "woodCollected", quantity, "woodAfter", actor.itemCount(ItemType.WOOD), "bundleCount", bundles.size())));
         this.gainExperience(world, actor, request, events, index, this.defaults.getLootExperienceGain());
         this.remember(world, actor, world.cell(actor.getPosition()), true, world.getSequenceNumber());
@@ -592,9 +601,69 @@ public class Illuvatar {
         Granary granary = world.granaryAt(actor.getPosition());
         if (granary == null || !granary.getTeamId().equals(actor.getTeamId()) || !granary.consume()) { this.reject(world, actor, request, events, index, "NO_ALLIED_WHEAT"); return; }
         int healthBefore = actor.getHealthPoints();
-        actor.heal(this.defaults.getWheatHealthGain());
-        events.add(this.event(world, request, actor, "WHEAT_EATEN", index, Map.of("granaryId", granary.getId(), "healthBefore", healthBefore, "healthAfter", actor.getHealthPoints(), "storedWheat", granary.getWheatQuantity())));
+        int[] foodResult = this.applyFoodHealing(actor, this.defaults.getWheatHealthGain());
+        events.add(this.event(world, request, actor, "WHEAT_EATEN", index, Map.of("granaryId", granary.getId(), "healthBefore", healthBefore, "healthAfter", actor.getHealthPoints(), "storedWheat", granary.getWheatQuantity(), "healing", foodResult[0], "foodStored", foodResult[1], "foodDiscarded", foodResult[2], "foodInventory", actor.itemCount(ItemType.FOOD))));
         this.gainExperience(world, actor, request, events, index, this.defaults.getWheatExperienceGain());
+    }
+
+    private int[] applyFoodHealing(Peon peon, int healingValue) {
+        int healed = Math.min(Math.max(0, healingValue), peon.getMaxHealthPoints() - peon.getHealthPoints());
+        peon.heal(healed);
+        int surplus = Math.max(0, healingValue - healed);
+        int stored = peon.addItem(ItemType.FOOD, surplus);
+        return new int[]{healed, stored, surplus - stored};
+    }
+
+    private void eatStoredFood(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        int missingHealth = actor.getMaxHealthPoints() - actor.getHealthPoints();
+        int consumed = Math.min(missingHealth, actor.itemCount(ItemType.FOOD));
+        if (consumed <= 0) { this.reject(world, actor, request, events, index, "NO_USEFUL_STORED_FOOD"); return; }
+        int healthBefore = actor.getHealthPoints();
+        actor.removeItem(ItemType.FOOD, consumed);
+        actor.heal(consumed);
+        events.add(this.event(world, request, actor, "STORED_FOOD_EATEN", index, Map.of("quantity", consumed, "healthBefore", healthBefore, "healthAfter", actor.getHealthPoints(), "foodInventory", actor.itemCount(ItemType.FOOD))));
+    }
+
+    private void giveFood(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        Peon recipient = this.alliedInteractionTarget(world, actor, request.action().targetPeonId());
+        if (recipient == null) { this.reject(world, actor, request, events, index, "INVALID_ALLIED_TRADE_TARGET"); return; }
+        int need = Math.max(0, recipient.getMaxHealthPoints() - recipient.getHealthPoints() - recipient.itemCount(ItemType.FOOD));
+        int offered = Math.min(10 + actor.getPersonality().getSolidarity() / 2, Math.max(1, need));
+        int transferred = actor.transferItemTo(recipient, ItemType.FOOD, offered);
+        if (transferred == 0) { this.reject(world, actor, request, events, index, "NO_FOOD_TO_GIVE"); return; }
+        events.add(this.event(world, request, actor, "FOOD_GIVEN", index, Map.of("recipientPeonId", recipient.getId(), "quantity", transferred, "giverFoodAfter", actor.itemCount(ItemType.FOOD), "recipientFoodAfter", recipient.itemCount(ItemType.FOOD))));
+    }
+
+    private void requestFood(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        Peon donor = this.alliedInteractionTarget(world, actor, request.action().targetPeonId());
+        if (donor == null) { this.reject(world, actor, request, events, index, "INVALID_ALLIED_TRADE_TARGET"); return; }
+        events.add(this.event(world, request, actor, "FOOD_REQUESTED", index, Map.of("donorPeonId", donor.getId())));
+        double acceptance = donor.getPersonality().getSolidarity() + donor.getPersonality().getIngenuity() * 0.2 - donor.getPersonality().getPrudence() * 0.25;
+        int need = Math.max(0, actor.getMaxHealthPoints() - actor.getHealthPoints() - actor.itemCount(ItemType.FOOD));
+        int offered = Math.min(10 + donor.getPersonality().getSolidarity() / 2, Math.max(1, need));
+        int transferred = acceptance >= 30 ? donor.transferItemTo(actor, ItemType.FOOD, offered) : 0;
+        if (transferred == 0) { events.add(this.event(world, request, donor, "FOOD_REQUEST_REFUSED", index, Map.of("requesterPeonId", actor.getId()))); return; }
+        events.add(this.event(world, request, donor, "FOOD_REQUEST_ACCEPTED", index, Map.of("requesterPeonId", actor.getId(), "quantity", transferred, "donorFoodAfter", donor.itemCount(ItemType.FOOD), "requesterFoodAfter", actor.itemCount(ItemType.FOOD))));
+    }
+
+    private void tradeFoodForWood(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
+        Peon partner = this.alliedInteractionTarget(world, actor, request.action().targetPeonId());
+        if (partner == null) { this.reject(world, actor, request, events, index, "INVALID_ALLIED_TRADE_TARGET"); return; }
+        double acceptance = partner.getPersonality().getIngenuity() * 0.5 + partner.getPersonality().getSolidarity() * 0.35 - partner.getPersonality().getPrudence() * 0.2;
+        int maximum = 10 + actor.getPersonality().getIngenuity() / 2;
+        int quantity = Math.min(maximum, Math.min(actor.itemCount(ItemType.FOOD), Math.min(partner.itemCount(ItemType.WOOD), Math.min(actor.remainingCapacity(ItemType.WOOD), partner.remainingCapacity(ItemType.FOOD)))));
+        events.add(this.event(world, request, actor, "RESOURCE_TRADE_PROPOSED", index, Map.of("partnerPeonId", partner.getId(), "foodOffered", quantity, "woodRequested", quantity)));
+        if (acceptance < 30 || quantity <= 0) { events.add(this.event(world, request, partner, "RESOURCE_TRADE_REFUSED", index, Map.of("requesterPeonId", actor.getId()))); return; }
+        actor.removeItem(ItemType.FOOD, quantity);
+        partner.removeItem(ItemType.WOOD, quantity);
+        actor.addItem(ItemType.WOOD, quantity);
+        partner.addItem(ItemType.FOOD, quantity);
+        events.add(this.event(world, request, actor, "RESOURCE_TRADE_COMPLETED", index, Map.of("partnerPeonId", partner.getId(), "foodQuantity", quantity, "woodQuantity", quantity, "actorFoodAfter", actor.itemCount(ItemType.FOOD), "actorWoodAfter", actor.itemCount(ItemType.WOOD), "partnerFoodAfter", partner.itemCount(ItemType.FOOD), "partnerWoodAfter", partner.itemCount(ItemType.WOOD))));
+    }
+
+    private Peon alliedInteractionTarget(World world, Peon actor, UUID targetPeonId) {
+        Peon target = world.getPeons().get(targetPeonId);
+        return target != null && target.isAlive() && target.getTeamId().equals(actor.getTeamId()) && target.getPosition().equals(actor.getPosition()) && (target.getInsideHouseId() == null ? actor.getInsideHouseId() == null : target.getInsideHouseId().equals(actor.getInsideHouseId())) ? target : null;
     }
 
     private boolean isFreeConstructionSite(World world, Peon actor) {
