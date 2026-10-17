@@ -6,7 +6,8 @@ await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, a
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
 pixiApp.stage.sortableChildren = true;
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass.png', rock:'/assets/terrain-rock.png?v=20261011-2', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(source)])));
+const assetVersion = '20261017-flat-terrain1';
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass-flat.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field-flat.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(`${source}?v=${assetVersion}`)])));
 const animationState = { peons:new Map(), animations:[], frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 
 function resetView() {
@@ -265,14 +266,18 @@ function drawWorld() {
     const selected = world.peons[state.selectedPeonId];
     const mental = !state.selectedHouseId && !state.selectedGranaryId && $('#mentalMapToggle').checked && selected?.alive ? selected.mentalMap : null;
     const visibleWoodBundles = [];
+    const visibleTerrainFeatures = [];
+    const cellCoordinates = new Set(Object.values(world.cells).map(cell => `${cell.coordinate.q}:${cell.coordinate.r}`));
     Object.values(world.cells).forEach(cell => {
         const known = !mental || mental[`${cell.coordinate.q}:${cell.coordinate.r}`];
         const rendered = mental && known ? { ...cell, terrain: known.terrain, foodQuantity: known.rememberedFoodQuantity, woodBundleQuantity:known.rememberedWoodBundleQuantity || 0, occupantPeonIds: known.rememberedOccupants } : { ...cell, woodBundleQuantity:Object.values(world.woodBundles || {}).filter(bundle => bundle.position.q === cell.coordinate.q && bundle.position.r === cell.coordinate.r).reduce((sum, bundle) => sum + bundle.quantity, 0) };
         const point = centerOf(cell.coordinate, geo);
-        drawCell(rendered, point, geo, Boolean(known));
+        drawCell(rendered, point, geo, Boolean(known), cellCoordinates);
+        if (known && ['ROCK', 'TREE'].includes(rendered.terrain)) visibleTerrainFeatures.push({ terrain:rendered.terrain, point });
         if (known && rendered.foodQuantity > 0) { drawFood(rendered, point, geo); }
         if (known && rendered.woodBundleQuantity > 0) { visibleWoodBundles.push({ quantity:rendered.woodBundleQuantity, point }); }
     });
+    visibleTerrainFeatures.forEach(feature => drawTerrainFeature(feature, geo));
     drawSelectedGranaryNetwork(world, geo);
     Object.values(world.houses || {}).filter(house => !mental || mental[`${house.position.q}:${house.position.r}`]).forEach(house => drawHouse(house, geo));
     Object.values(world.wheatFields || {}).filter(field => !mental || mental[`${field.position.q}:${field.position.r}`]).forEach(field => drawAgriculturalBuilding(field, geo, assets.field, field.wheatQuantity, 'field'));
@@ -312,7 +317,7 @@ function drawSheep(sheep, geo, remembered) {
         const spread = items.length === 1 ? 0 : geo.size * .28;
         const sprite = new PIXI.Sprite(assets.sheep);
         const size = Math.max(8, geo.size * 1.05);
-        sprite.anchor.set(.5); sprite.position.set(point.x + Math.cos(angle) * spread, point.y + Math.sin(angle) * spread); sprite.width = size; sprite.height = size; sprite.alpha = remembered ? .55 : 1;
+        sprite.anchor.set(.5, .8); sprite.position.set(point.x + Math.cos(angle) * spread, point.y + Math.sin(angle) * spread); setSpriteHeight(sprite, size); sprite.alpha = remembered ? .55 : 1;
         sprite.zIndex = objectDepth(sprite.position, index * .01);
         pixiApp.stage.addChild(sprite);
     }));
@@ -324,7 +329,7 @@ function drawHouse(house, geo) {
     if (house.id === state.selectedHouseId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(7, geo.size * .78), Math.max(4, geo.size * .35)).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .09) }); selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection); }
     const sprite = new PIXI.Sprite(assets.house);
     const size = Math.max(10, geo.size * 2.15);
-    sprite.anchor.set(.5, .78); sprite.position.set(point.x, point.y + geo.size * .2); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
+    sprite.anchor.set(.5, .82); sprite.position.set(point.x, point.y + geo.size * .2); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point);
     pixiApp.stage.addChild(sprite);
 }
 
@@ -333,8 +338,21 @@ function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
     if (kind === 'granary') drawGroundShadow(point, geo, Math.max(7, geo.size * .58));
     if (kind === 'granary' && item.id === state.selectedGranaryId) { const selection = new PIXI.Graphics().ellipse(point.x, point.y + geo.size * .12, Math.max(8, geo.size * .8), Math.max(4, geo.size * .36)).stroke({ color:'#ffd166', width:Math.max(2, geo.size * .12) }); selection.zIndex = objectDepth(point, -1); pixiApp.stage.addChild(selection); }
     const sprite = new PIXI.Sprite(texture);
-    const size = kind === 'field' ? Math.max(24, geo.size * 2.35) : Math.max(10, geo.size * 1.9);
-    sprite.anchor.set(.5, kind === 'field' ? .5 : .76); sprite.position.set(point.x, point.y + (kind === 'field' ? 0 : geo.size * .16)); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
+    const size = kind === 'field' ? Math.max(24, geo.size * 1.62) : Math.max(10, geo.size * 2.05);
+    sprite.anchor.set(.5, kind === 'field' ? .5 : .82); sprite.position.set(point.x, point.y + (kind === 'field' ? 0 : geo.size * .2));
+    if (kind === 'field') {
+        const points = hexPoints(geo.size - .35);
+        const xValues = points.filter((value, index) => index % 2 === 0);
+        const yValues = points.filter((value, index) => index % 2 === 1);
+        sprite.width = (Math.max(...xValues) - Math.min(...xValues)) * 1.08;
+        sprite.height = (Math.max(...yValues) - Math.min(...yValues)) * 1.08;
+        const mask = new PIXI.Graphics().poly(points).fill('#ffffff');
+        mask.position.set(point.x, point.y);
+        sprite.mask = mask;
+        mask.zIndex = -90000 + point.y;
+        pixiApp.stage.addChild(mask);
+    } else { setSpriteHeight(sprite, size); }
+    sprite.zIndex = kind === 'field' ? -90000 + point.y : objectDepth(point);
     pixiApp.stage.addChild(sprite);
     if (quantity > 0 && geo.size > 10) {
         const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4bd', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#3b2609', width:2 } } });
@@ -393,24 +411,48 @@ function drawRememberedPeons(selected, world, geo) {
     }));
 }
 
-function drawCell(cell, point, geo, known) {
-    const texture = cell.terrain === 'ROCK' ? assets.rock : cell.terrain === 'TREE' ? assets.tree : assets.grass;
-    const fill = known ? { texture, textureSpace:'local', color:cell.terrain === 'ROCK' ? '#dddddd' : '#e8ffe1' } : '#0c0f0c';
+function drawCell(cell, point, geo, known, cellCoordinates) {
     const points = hexPoints(geo.size - .35);
     const tile = new PIXI.Container();
     tile.position.set(point.x, point.y); tile.zIndex = -100000 + point.y;
-    const rightSide = new PIXI.Graphics().poly([points[0], points[1], points[2], points[3], points[2], points[3] + geo.depth, points[0], points[1] + geo.depth]).fill(known ? '#26351f' : '#080a08');
-    const leftSide = new PIXI.Graphics().poly([points[2], points[3], points[4], points[5], points[4], points[5] + geo.depth, points[2], points[3] + geo.depth]).fill(known ? '#1a2818' : '#060806');
-    const top = new PIXI.Graphics().poly(points).fill(fill).stroke({ color:known ? '#92a180' : '#151915', alpha:known ? .5 : 1, width:Math.max(.6, geo.size * .025) });
-    tile.addChild(rightSide, leftSide, top);
+    const rightSide = new PIXI.Graphics().poly([points[0], points[1], points[2], points[3], points[2], points[3] + geo.depth, points[0], points[1] + geo.depth]).fill(known ? '#68472b' : '#080a08');
+    const leftSide = new PIXI.Graphics().poly([points[2], points[3], points[4], points[5], points[4], points[5] + geo.depth, points[2], points[3] + geo.depth]).fill(known ? '#4c321f' : '#060806');
+    const base = new PIXI.Graphics().poly(points).fill(known ? '#79a842' : '#0c0f0c');
+    const texture = new PIXI.Sprite(assets.grass);
+    const xValues = points.filter((value, index) => index % 2 === 0);
+    const yValues = points.filter((value, index) => index % 2 === 1);
+    texture.anchor.set(.5); texture.width = (Math.max(...xValues) - Math.min(...xValues)) * 1.08; texture.height = (Math.max(...yValues) - Math.min(...yValues)) * 1.08; texture.alpha = known ? .86 : 0;
+    const textureMask = new PIXI.Graphics().poly(points).fill('#ffffff');
+    texture.mask = textureMask;
+    const border = new PIXI.Graphics().poly(points).stroke({ color:known ? '#92a180' : '#151915', alpha:known ? .5 : 1, width:Math.max(.6, geo.size * .025) });
+    if (!cellCoordinates.has(`${cell.coordinate.q + 1}:${cell.coordinate.r}`)) tile.addChild(rightSide);
+    if (!cellCoordinates.has(`${cell.coordinate.q}:${cell.coordinate.r + 1}`)) tile.addChild(leftSide);
+    tile.addChild(base, texture, textureMask, border);
     pixiApp.stage.addChild(tile);
+}
+
+function setSpriteHeight(sprite, height) {
+    sprite.height = height;
+    sprite.width = height * sprite.texture.width / sprite.texture.height;
+}
+
+function drawTerrainFeature(feature, geo) {
+    const isTree = feature.terrain === 'TREE';
+    const sprite = new PIXI.Sprite(isTree ? assets.tree : assets.rock);
+    const height = isTree ? Math.max(18, geo.size * 3.15) : Math.max(14, geo.size * 2.25);
+    drawGroundShadow(feature.point, geo, geo.size * (isTree ? .62 : .7), isTree ? .3 : .22);
+    sprite.anchor.set(.5, isTree ? .91 : .86);
+    sprite.position.set(feature.point.x, feature.point.y + geo.size * .2);
+    setSpriteHeight(sprite, height);
+    sprite.zIndex = objectDepth(feature.point);
+    pixiApp.stage.addChild(sprite);
 }
 
 function drawFood(cell, point, geo) {
     const quantityScale = .72 + Math.min(cell.foodQuantity, 4) * .08;
     const size = geo.size * quantityScale;
     const sprite = new PIXI.Sprite(assets.food);
-    sprite.anchor.set(.5, .72); sprite.position.set(point.x, point.y + geo.size * .08); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
+    sprite.anchor.set(.5, .75); sprite.position.set(point.x, point.y + geo.size * .08); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point);
     pixiApp.stage.addChild(sprite);
     if (geo.size > 10) {
         const label = new PIXI.Text({ text:String(cell.foodQuantity), style:{ fill:'#ffffff', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .32), fontWeight:'700', stroke:{ color:'#17120a', width:2 } } });
@@ -421,7 +463,7 @@ function drawFood(cell, point, geo) {
 function drawWoodBundle(quantity, point, geo) {
     const sprite = new PIXI.Sprite(assets.woodBundle);
     const size = Math.max(7, geo.size * .82);
-    sprite.anchor.set(.5, .7); sprite.position.set(point.x - geo.size * .48, point.y + geo.size * .38); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point, 1);
+    sprite.anchor.set(.5, .75); sprite.position.set(point.x - geo.size * .48, point.y + geo.size * .38); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point, 1);
     pixiApp.stage.addChild(sprite);
     if (geo.size > 10) { const label = new PIXI.Text({ text:String(quantity), style:{ fill:'#fff4d5', fontFamily:'sans-serif', fontSize:Math.max(7, geo.size * .3), fontWeight:'700', stroke:{ color:'#25150b', width:2 } } }); label.anchor.set(.5); label.position.set(sprite.x + size * .3, sprite.y + size * .3); label.zIndex = objectDepth(point, 2); pixiApp.stage.addChild(label); }
 }
@@ -463,7 +505,7 @@ function drawGravePresentations(presentations, geo, remembered) {
     presentations.forEach(({ grave, point }) => {
         const sprite = new PIXI.Sprite(assets.grave);
         const size = Math.max(7, geo.size * .9);
-        sprite.anchor.set(.5, .72); sprite.position.set(point.x, point.y); sprite.width = size; sprite.height = size; sprite.zIndex = objectDepth(point);
+        sprite.anchor.set(.5, .84); sprite.position.set(point.x, point.y); setSpriteHeight(sprite, size); sprite.zIndex = objectDepth(point);
         sprite.alpha = remembered ? .5 : grave.peonId === state.selectedPeonId ? 1 : .88;
         if (grave.peonId === state.selectedPeonId) {
             const selection = new PIXI.Graphics().circle(point.x, point.y, size * .46).stroke({ color:'#f4d58a', width:Math.max(1, geo.size * .08) });
@@ -494,7 +536,7 @@ function drawPeon(peon, world, geo, presentation = {}) {
     if (presentation.remembered) marker.stroke({ color:relationColor, width:Math.max(1, geo.size * .07) });
     peonContainer.addChild(marker);
     const sprite = new PIXI.Sprite(assets.peon);
-    sprite.anchor.set(.5, .62); sprite.width = spriteWidth; sprite.height = spriteHeight;
+    sprite.anchor.set(.5, .88); sprite.height = spriteHeight; sprite.width = Math.min(spriteWidth, spriteHeight * sprite.texture.width / sprite.texture.height);
     peonContainer.addChild(sprite);
     if (!presentation.remembered && geo.size > 9) {
         const barWidth = spriteWidth;
