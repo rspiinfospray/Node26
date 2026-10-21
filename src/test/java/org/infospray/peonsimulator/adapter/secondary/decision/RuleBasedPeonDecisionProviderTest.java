@@ -235,9 +235,38 @@ class RuleBasedPeonDecisionProviderTest {
     @Test
     void shouldExposeScoresAndSituationForExplanation() {
         PeonDecision decision = this.provider.decide(this.context(100, false, Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2))));
-        assertThat(decision.situationKey()).contains("PV_MAX", "SEUL");
+        assertThat(decision.situationKey()).contains("PV_MAX", "SEUL", "PV_EXACTS_100", "NOURRITURE_0", "BOIS_0");
         assertThat(decision.candidates()).isNotEmpty();
         assertThat(decision.selectedScore()).isEqualTo(decision.candidates().stream().filter(candidate -> candidate.actionType() == decision.action().type()).findFirst().orElseThrow().score());
+    }
+
+    @Test
+    void shouldIncludeMovementAndHungerInMovementCost() {
+        PeonDecision decision = this.provider.decide(this.context(100, false, Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2))));
+        PeonDecision.CandidateScore movement = decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.SE_DEPLACER).findFirst().orElseThrow();
+
+        assertThat(movement.factors()).containsEntry("coût complet du tour en PV", -15.0);
+    }
+
+    @Test
+    void shouldNotOfferAnotherBridgeWhenOneIsAlreadyKnown() {
+        HexCoordinate river = new HexCoordinate(3, 2);
+        HexCoordinate bridge = new HexCoordinate(2, 3);
+        Map<String, RememberedCell> map = Map.of("3:2", new RememberedCell(new Cell(river, TerrainType.RIVER, 0), false, 9), "2:3", new RememberedCell(new Cell(bridge, TerrainType.BRIDGE, 0), false, 9));
+        PeonDecisionContext base = this.context(100, false, Map.of(), map, List.of(), 0, List.of());
+        PeonDecisionContext context = new PeonDecisionContext(base.peonId(), base.teamId(), base.healthPoints(), base.maxHealthPoints(), base.experiencePoints(), base.level(), base.position(), base.concealedByTree(), base.sequenceNumber(), base.decisionSeed(), base.personality(), base.learnedActions(), base.mentalMap(), base.peonsOnCurrentCell(), base.foodOnCurrentCell(), base.traversableNeighbors(), base.currentRound(), base.lastObservationRound(), TerrainType.PLAIN, 0, 50, 0, false, null, List.of(), 0, 0);
+
+        assertThat(this.provider.decide(context).candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.CONSTRUIRE_PONT);
+    }
+
+    @Test
+    void shouldNotOfferBridgeWhenOppositeBankIsUnknown() {
+        HexCoordinate river = new HexCoordinate(3, 2);
+        Map<String, RememberedCell> map = Map.of("3:2", new RememberedCell(new Cell(river, TerrainType.RIVER, 0), false, 9));
+        PeonDecisionContext base = this.context(100, false, Map.of(), map, List.of(), 0, List.of());
+        PeonDecisionContext context = new PeonDecisionContext(base.peonId(), base.teamId(), base.healthPoints(), base.maxHealthPoints(), base.experiencePoints(), base.level(), base.position(), base.concealedByTree(), base.sequenceNumber(), base.decisionSeed(), base.personality(), base.learnedActions(), base.mentalMap(), base.peonsOnCurrentCell(), base.foodOnCurrentCell(), base.traversableNeighbors(), base.currentRound(), base.lastObservationRound(), TerrainType.PLAIN, 0, 50, 0, false, null, List.of(), 0, 0);
+
+        assertThat(this.provider.decide(context).candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.CONSTRUIRE_PONT);
     }
 
     @Test

@@ -50,7 +50,7 @@ Les variables suivantes sont facultatives :
 | `AUTOFIX_API_BASE_URL` | `http://localhost:8080` | URL du backend |
 | `AUTOFIX_RUN_ONCE` | `false` | Quitter après une vérification |
 
-Les marqueurs de succès et d'échec sont enregistrés dans `reports/autofix-state`. Les réponses finales de Codex sont enregistrées dans `reports/codex-results`.
+Les marqueurs de succès et d'échec sont enregistrés dans `reports/autofix-state`. Les réponses finales de Codex sont enregistrées dans `reports/codex-results`. La sortie complète de chaque tentative Codex est conservée dans un fichier `codex-cycle-<cycle>-attempt-<tentative>.log`. Si Codex termine sans créer son compte rendu final, le superviseur effectue automatiquement une seconde tentative avant de marquer le rapport en échec.
 
 ## Arrêt et erreurs
 

@@ -324,6 +324,8 @@ function render() {
     $('#emptyState').hidden = Boolean(world);
     if (!world) {
         $('#analysisButton').disabled = true;
+        $('#supervisorButton').hidden = true;
+        $('#supervisorButton').disabled = true;
         $('#openWorldJournalButton').disabled = true;
         clearWorldStage();
         $('#statusBadge').textContent = 'État : —';
@@ -350,6 +352,8 @@ function render() {
         return;
     }
     $('#analysisButton').disabled = false;
+    $('#supervisorButton').hidden = state.liveWorld?.status !== 'FINISHED';
+    $('#supervisorButton').disabled = state.liveWorld?.status !== 'FINISHED';
     $('#openWorldJournalButton').disabled = false;
     $('#statusBadge').textContent = `État : ${state.historical ? 'Archive' : friendlyWorldStatus(world.status)}`;
     $('#roundValue').textContent = `${world.currentRound}/${world.maxRounds}`;
@@ -1276,6 +1280,22 @@ canvas.addEventListener('pointercancel', () => { state.dragging=false; canvas.cl
 canvas.addEventListener('wheel', event => { event.preventDefault(); const rect = canvas.getBoundingClientRect(); changeZoom(event.deltaY < 0 ? .35 : -.35, { x:event.clientX - rect.left, y:event.clientY - rect.top }); }, { passive:false });
 
 $('#worldSelect').addEventListener('change', event => selectWorld(event.target.value));
+$('#supervisorButton').addEventListener('click', async () => {
+    if (state.liveWorld?.status !== 'FINISHED') return;
+    const button = $('#supervisorButton');
+    const initialLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Lancement…';
+    try {
+        await api(`/api/worlds/${state.liveWorld.id}/supervision`, { method:'POST' });
+        button.textContent = 'Analyse lancée';
+        window.setTimeout(() => { if (state.liveWorld?.status === 'FINISHED') { button.textContent = initialLabel; button.disabled = false; } }, 2200);
+    } catch (error) {
+        button.textContent = initialLabel;
+        button.disabled = false;
+        window.alert(`Le superviseur n’a pas pu être lancé : ${error.message}`);
+    }
+});
 $('#speedButton').addEventListener('click', toggleSimulationSpeed);
 const analysisDialog = $('#analysisDialog');
 const worldJournalDialog = $('#worldJournalDialog');

@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.List;
 
 public class CodexCliCorrectionAgent implements CodexCorrectionAgent {
+    private static final int MAXIMUM_ATTEMPTS = 2;
     private final Path projectDirectory;
     private final Path promptTemplate;
     private final Path outputDirectory;
@@ -28,11 +29,41 @@ public class CodexCliCorrectionAgent implements CodexCorrectionAgent {
         try { Files.createDirectories(this.outputDirectory); Files.deleteIfExists(output); } catch (IOException exception) { throw new IllegalStateException("Impossible de préparer le dossier de sortie Codex", exception); }
         String escapedOutput = output.toString().replace("'", "''");
         String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & codex.cmd exec --sandbox danger-full-access --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
-        ProcessExecution.run(this.projectDirectory, Duration.ofMinutes(45), prompt, List.of("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script));
+        for (int attempt = 1; attempt <= MAXIMUM_ATTEMPTS; attempt++) {
+            Path transcript = this.outputDirectory.resolve("codex-cycle-" + cycleNumber + "-attempt-" + attempt + ".log");
+            String processOutput;
+            try {
+                processOutput = ProcessExecution.run(this.projectDirectory, Duration.ofMinutes(45), prompt, List.of("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script));
+                this.writeTranscript(transcript, processOutput);
+            } catch (RuntimeException exception) {
+                this.writeTranscript(transcript, exception.getMessage());
+                throw new IllegalStateException("Codex a échoué. Sortie complète: " + transcript, exception);
+            }
+            if (this.hasResult(output)) { return this.readResult(output); }
+            if (attempt == MAXIMUM_ATTEMPTS) { throw new IllegalStateException("Codex n'a créé aucun fichier de résultat après " + MAXIMUM_ATTEMPTS + " tentatives. Dernier journal: " + transcript + this.outputSummary(processOutput)); }
+        }
+        throw new IllegalStateException("Codex n'a produit aucun résultat");
+    }
+
+    private CodexCorrectionResult readResult(Path output) {
         try {
-            if (!Files.isRegularFile(output)) { throw new IllegalStateException("Codex n'a créé aucun fichier de résultat"); }
             return new CodexCorrectionResult(Files.readString(output, StandardCharsets.UTF_8));
         } catch (IOException exception) { throw new IllegalStateException("Impossible de lire le résultat Codex", exception); }
+    }
+
+    private boolean hasResult(Path output) {
+        try { return Files.isRegularFile(output) && Files.size(output) > 0; } catch (IOException exception) { throw new IllegalStateException("Impossible de vérifier le résultat Codex", exception); }
+    }
+
+    private void writeTranscript(Path transcript, String content) {
+        try { Files.writeString(transcript, String.valueOf(content), StandardCharsets.UTF_8); } catch (IOException exception) { throw new IllegalStateException("Impossible d'enregistrer la sortie Codex dans " + transcript, exception); }
+    }
+
+    private String outputSummary(String output) {
+        if (output == null || output.isBlank()) { return ". La commande Codex n'a produit aucune sortie standard."; }
+        String normalized = output.strip();
+        int start = Math.max(0, normalized.length() - 1000);
+        return ". Fin de la sortie Codex: " + normalized.substring(start);
     }
 
     private String buildPrompt(Path report, int cycleNumber) {

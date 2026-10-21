@@ -9,6 +9,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class WorldTest {
     @Test
+    void shouldFinishAtConfiguredMaximumRound() {
+        World world = new World();
+        Peon peon = new Peon(UUID.randomUUID(), "Aragorn", UUID.randomUUID(), new HexCoordinate(0, 0));
+        world.setPeons(Map.of(peon.getId(), peon));
+        world.setCurrentRound(100);
+        world.setMaxRounds(100);
+
+        world.completeTurn();
+
+        assertThat(world.getCurrentRound()).isEqualTo(100);
+        assertThat(world.getStatus()).isEqualTo(WorldStatus.FINISHED);
+    }
+
+    @Test
     void shouldCreateMissingGraveWhenLoadingLegacyDeadPeon() {
         World world = new World();
         Peon deadPeon = new Peon(UUID.randomUUID(), "Boromir", UUID.randomUUID(), new HexCoordinate(2, 3));

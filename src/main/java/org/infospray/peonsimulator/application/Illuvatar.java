@@ -609,11 +609,14 @@ public class Illuvatar {
         HexCoordinate destination = request.action().destination();
         if (destination == null || actor.getPosition().distanceTo(destination) != 1 || !world.contains(destination) || world.cell(destination).getTerrain() != TerrainType.RIVER) { this.reject(world, actor, request, events, index, "INVALID_BRIDGE_SITE"); return; }
         HexCoordinate oppositeBank = new HexCoordinate(destination.q() + destination.q() - actor.getPosition().q(), destination.r() + destination.r() - actor.getPosition().r());
+        if (!world.contains(oppositeBank)) { this.reject(world, actor, request, events, index, "BRIDGE_EXIT_OUTSIDE_WORLD"); return; }
         if (world.contains(oppositeBank) && world.cell(oppositeBank).getTerrain() == TerrainType.ROCK) { this.reject(world, actor, request, events, index, "BRIDGE_EXIT_BLOCKED_BY_ROCK"); return; }
         boolean bridgeVisible = this.visibleCoordinates(world, actor).stream().anyMatch(coordinate -> world.cell(coordinate).getTerrain() == TerrainType.BRIDGE);
         if (bridgeVisible) { this.reject(world, actor, request, events, index, "BRIDGE_ALREADY_VISIBLE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForBridge())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         world.cell(destination).setTerrain(TerrainType.BRIDGE);
+        RememberedCell rememberedBridge = actor.getMentalMap().get(World.key(destination));
+        if (rememberedBridge != null) { rememberedBridge.setTerrain(TerrainType.BRIDGE); rememberedBridge.setLastObservedAtSequence(world.getSequenceNumber()); }
         events.add(this.event(world, request, actor, "BRIDGE_BUILT", index, Map.of("position", destination, "woodSpent", this.defaults.getWoodRequiredForBridge(), "woodAfter", actor.itemCount(ItemType.WOOD))));
         this.gainExperience(world, actor, request, events, index, this.defaults.getBuildBridgeExperienceGain());
         this.observe(world, actor, world.getSequenceNumber());
@@ -739,16 +742,20 @@ public class Illuvatar {
     private void learnFromOutcome(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         boolean rejected = events.stream().anyMatch(event -> "PEON_ACTION_REJECTED".equals(event.eventType()) && actor.getId().equals(event.peonId()));
         int healthDelta = actor.getHealthPoints() - actor.getHealthBeforeDecision();
+        int levelUpHealthGain = events.stream().filter(event -> "PEON_LEVEL_UP_HEAL_APPLIED".equals(event.eventType()) && actor.getId().equals(event.peonId())).mapToInt(event -> ((Number) event.payload().get("healthAfter")).intValue() - ((Number) event.payload().get("healthBefore")).intValue()).sum();
+        int actionHealthDelta = healthDelta - levelUpHealthGain;
         int experienceDelta = actor.getExperiencePoints() - actor.getExperienceBeforeDecision();
         int knownCellsDelta = actor.getMentalMap().size() - actor.getKnownCellsBeforeDecision();
-        double healthPercentageDelta = healthDelta * 100.0 / actor.getMaxHealthPoints();
+        double healthPercentageDelta = actionHealthDelta * 100.0 / actor.getMaxHealthPoints();
         double reward = healthPercentageDelta * 1.2 + experienceDelta * 0.5 + knownCellsDelta * 4.0 + (actor.isAlive() ? 5 : -100) + (rejected ? -25 : 0);
         if (events.stream().anyMatch(event -> "PEON_ATE".equals(event.eventType()))) { reward += 15; }
         if (events.stream().anyMatch(event -> "PEON_ATTACKED".equals(event.eventType()))) { reward += 20; }
         if (events.stream().anyMatch(event -> "PEON_COMMUNICATED".equals(event.eventType()))) { reward += 10; }
         ActionExperience experience = actor.learnFromDecision(world.getSequenceNumber(), Math.round(reward * 10.0) / 10.0, rejected, this.defaults.getLearningRate(), this.defaults.getActionHistoryLimit());
         String knowledgeKey = experience.situationKey() + "|" + experience.actionType().name();
-        events.add(this.event(world, request, actor, "PEON_LEARNED", index, Map.of("actionType", experience.actionType().name(), "situationKey", experience.situationKey(), "reward", experience.reward(), "healthDelta", experience.healthDelta(), "experienceDelta", experience.experienceDelta(), "knownCellsDelta", experience.knownCellsDelta(), "rejected", experience.rejected(), "survived", experience.survived(), "expectedReward", actor.getLearnedActions().get(knowledgeKey).getExpectedReward())));
+        Map<String, Object> learningPayload = new LinkedHashMap<>();
+        learningPayload.put("actionType", experience.actionType().name()); learningPayload.put("situationKey", experience.situationKey()); learningPayload.put("reward", experience.reward()); learningPayload.put("healthDelta", experience.healthDelta()); learningPayload.put("actionHealthDelta", actionHealthDelta); learningPayload.put("levelUpHealthGain", levelUpHealthGain); learningPayload.put("experienceDelta", experience.experienceDelta()); learningPayload.put("knownCellsDelta", experience.knownCellsDelta()); learningPayload.put("rejected", experience.rejected()); learningPayload.put("survived", experience.survived()); learningPayload.put("expectedReward", actor.getLearnedActions().get(knowledgeKey).getExpectedReward());
+        events.add(this.event(world, request, actor, "PEON_LEARNED", index, learningPayload));
     }
 
     private void reject(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index, String reason) { events.add(this.event(world, request, actor, "PEON_ACTION_REJECTED", index, Map.of("reason", reason, "actionType", request.action().type().name()))); }

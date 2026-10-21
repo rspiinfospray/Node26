@@ -32,10 +32,12 @@ class IlluvatarBridgeTest {
     @Test
     void shouldGrantExperienceWhenBridgeIsBuilt() {
         BridgeFixture fixture = this.fixture();
+        fixture.peon().remember(fixture.world().cell(fixture.destination()), false, 1);
 
         fixture.illuvatar().processAction(fixture.request());
 
         assertThat(fixture.world().cell(fixture.destination()).getTerrain()).isEqualTo(TerrainType.BRIDGE);
+        assertThat(fixture.peon().getMentalMap().get(World.key(fixture.destination())).getTerrain()).isEqualTo(TerrainType.BRIDGE);
         assertThat(fixture.peon().getExperiencePoints()).isEqualTo(50);
         verify(fixture.eventRepository()).appendAll(argThat(events -> events.stream().anyMatch(event -> "PEON_EXPERIENCE_GAINED".equals(event.eventType()) && Integer.valueOf(50).equals(event.payload().get("amount")))));
     }
@@ -51,6 +53,18 @@ class IlluvatarBridgeTest {
         assertThat(fixture.world().cell(fixture.destination()).getTerrain()).isEqualTo(TerrainType.RIVER);
         assertThat(fixture.peon().itemCount(ItemType.WOOD)).isEqualTo(50);
         verify(fixture.eventRepository()).appendAll(argThat(events -> events.stream().anyMatch(event -> "PEON_ACTION_REJECTED".equals(event.eventType()) && "BRIDGE_EXIT_BLOCKED_BY_ROCK".equals(event.payload().get("reason")))));
+    }
+
+    @Test
+    void shouldRejectBridgeWhenOppositeBankIsOutsideWorld() {
+        BridgeFixture fixture = this.fixture();
+        fixture.world().getCells().remove(World.key(new HexCoordinate(2, 0)));
+
+        fixture.illuvatar().processAction(fixture.request());
+
+        assertThat(fixture.world().cell(fixture.destination()).getTerrain()).isEqualTo(TerrainType.RIVER);
+        assertThat(fixture.peon().itemCount(ItemType.WOOD)).isEqualTo(50);
+        verify(fixture.eventRepository()).appendAll(argThat(events -> events.stream().anyMatch(event -> "PEON_ACTION_REJECTED".equals(event.eventType()) && "BRIDGE_EXIT_OUTSIDE_WORLD".equals(event.payload().get("reason")))));
     }
 
     @Test

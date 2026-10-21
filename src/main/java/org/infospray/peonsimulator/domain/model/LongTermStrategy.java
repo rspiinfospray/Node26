@@ -24,6 +24,7 @@ public class LongTermStrategy {
     private String nextPriority;
     private int lastProgressAtRound;
     private int stagnantEvaluations;
+    private String lastTransitionReason;
 
     public LongTermStrategy() {
     }
@@ -56,6 +57,7 @@ public class LongTermStrategy {
     public String getNextPriority() { return this.nextPriority; }
     public int getLastProgressAtRound() { return this.lastProgressAtRound; }
     public int getStagnantEvaluations() { return this.stagnantEvaluations; }
+    public String getLastTransitionReason() { return this.lastTransitionReason; }
     public void setType(StrategyType value) { this.type = value; }
     public void setStatus(StrategyStatus value) { this.status = value; }
     public void setPhase(StrategicPhase value) { this.phase = value; }
@@ -75,4 +77,5 @@ public class LongTermStrategy {
     public void setNextPriority(String value) { this.nextPriority = value; }
     public void setLastProgressAtRound(int value) { this.lastProgressAtRound = value; }
     public void setStagnantEvaluations(int value) { this.stagnantEvaluations = Math.max(0, value); }
+    public void setLastTransitionReason(String value) { this.lastTransitionReason = value; }
 }

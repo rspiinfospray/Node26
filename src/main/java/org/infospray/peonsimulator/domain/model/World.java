@@ -139,6 +139,10 @@ public class World {
         while (true) {
             if (this.currentActorIndex >= ordered.size()) {
                 this.currentActorIndex = 0;
+                if (this.currentRound >= this.maxRounds) {
+                    this.status = WorldStatus.FINISHED;
+                    return null;
+                }
                 this.currentRound++;
             }
             if (this.currentRound > this.maxRounds) {
@@ -158,9 +162,10 @@ public class World {
         this.pendingActionId = null;
         if (this.currentActorIndex >= this.peons.size()) {
             this.currentActorIndex = 0;
-            this.currentRound++;
-            if (this.currentRound > this.maxRounds) {
+            if (this.currentRound >= this.maxRounds) {
                 this.status = WorldStatus.FINISHED;
+            } else {
+                this.currentRound++;
             }
         }
     }

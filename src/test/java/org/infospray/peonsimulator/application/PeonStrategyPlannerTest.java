@@ -13,6 +13,7 @@ import org.infospray.peonsimulator.domain.model.RememberedCell;
 import org.infospray.peonsimulator.domain.model.RememberedPeonObservation;
 import org.infospray.peonsimulator.domain.model.StrategicPhase;
 import org.infospray.peonsimulator.domain.model.StrategyType;
+import org.infospray.peonsimulator.domain.model.StrategyStatus;
 import org.infospray.peonsimulator.domain.model.TerrainType;
 import org.infospray.peonsimulator.domain.model.WheatField;
 import org.infospray.peonsimulator.domain.model.World;
@@ -47,6 +48,23 @@ class PeonStrategyPlannerTest {
         assertThat(peon.getLongTermStrategy().getType()).isEqualTo(StrategyType.PROTEGER_L_EQUIPE);
         assertThat(peon.getLongTermStrategy().getTargetArea()).isEqualTo(enemyPosition);
         assertThat(peon.getLongTermStrategy().getPhase()).isEqualTo(StrategicPhase.REJOINDRE_LA_MENACE);
+    }
+
+    @Test
+    void shouldPatrolWithoutClaimingThatAnUnseenThreatWasNeutralized() {
+        UUID teamId = UUID.randomUUID();
+        Peon peon = new Peon(UUID.randomUUID(), "Eldamir", teamId, new HexCoordinate(0, 0));
+        peon.setPersonality(new PeonPersonality(0, 100, 0, 0, 0));
+        peon.setLongTermStrategy(new LongTermStrategy(StrategyType.PROTEGER_L_EQUIPE, 1, teamId));
+        World world = new World();
+        world.setCurrentRound(1);
+        world.setPeons(new LinkedHashMap<>(Map.of(peon.getId(), peon)));
+        world.addCell(new Cell(peon.getPosition(), TerrainType.PLAIN, 0));
+
+        this.planner.update(world, peon, this.defaults);
+
+        assertThat(peon.getLongTermStrategy().getStatus()).isEqualTo(StrategyStatus.EN_COURS);
+        assertThat(peon.getLongTermStrategy().getProgress()).isEqualTo(60);
     }
 
     @Test
