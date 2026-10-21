@@ -28,3 +28,8 @@
   retourner telle quelle la valeur d'une méthode sous-jacente. Les appelants
   doivent invoquer directement la méthode sous-jacente. Seules les méthodes
   imposées par un contrat externe ou ajoutant un comportement réel sont admises.
+- Pour analyser ou diagnostiquer une simulation en cours, utiliser en priorité
+  les endpoints REST prévus à cet effet dans `WorldController` (état du monde,
+  événements, diagnostics, synthèses et analyse) plutôt que de fouiller dans
+  les logs applicatifs. Les logs ne doivent être consultés que si les endpoints
+  ne permettent pas d'identifier le problème ou si l'application ne répond pas.

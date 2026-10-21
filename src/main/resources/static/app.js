@@ -1,4 +1,4 @@
-const state = { worlds: [], world: null, liveWorld: null, liveWorldNeedsResync: false, mentalMapsStale: false, lastCompletedSequence: 0, events: [], selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, selectedFieldId: null, selectedFoodKey: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, liveWorldNeedsResync: false, mentalMapsStale: false, lastCompletedSequence: 0, events: [], viewedRound: null, selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, selectedFieldId: null, selectedFoodKey: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const viewport = $('#worldViewport');
 const pixiApp = new PIXI.Application();
@@ -6,8 +6,11 @@ await pixiApp.init({ preference:'webgl', resizeTo:viewport, backgroundAlpha:0, a
 viewport.appendChild(pixiApp.canvas);
 const canvas = pixiApp.canvas;
 pixiApp.stage.sortableChildren = true;
-const assetVersion = '20261017-river-tiles2';
-const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass-flat.png', river:'/assets/terrain-river.png', bridge:'/assets/terrain-bridge.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field-flat.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(`${source}?v=${assetVersion}`)])));
+const assetVersion = '20261021-bald-orc1';
+const assets = Object.fromEntries(await Promise.all(Object.entries({ grass:'/assets/terrain-grass-flat.png', river:'/assets/terrain-river.png', bridge:'/assets/terrain-bridge.png', rock:'/assets/terrain-rock.png', tree:'/assets/terrain-tree.png', food:'/assets/food-cache.png', sheep:'/assets/sheep.png', peon:'/assets/peon-topdown.png', humanWalk:'/assets/peon-walk-human-v1.png', orcWalk:'/assets/peon-walk-orc-v1.png', grave:'/assets/grave.png', house:'/assets/house.png', field:'/assets/field-flat.png', granary:'/assets/granary.png', woodBundle:'/assets/wood-bundle.png' }).map(async ([name, source]) => [name, await PIXI.Assets.load(`${source}?v=${assetVersion}`)])));
+function walkingFrames(texture) { const frameWidth = texture.width / 4; return Array.from({ length:4 }, (_, index) => new PIXI.Texture({ source:texture.source, frame:new PIXI.Rectangle(index * frameWidth, 0, frameWidth, texture.height) })); }
+const humanWalkingFrames = walkingFrames(assets.humanWalk);
+const orcWalkingFrames = walkingFrames(assets.orcWalk);
 const animationState = { peons:new Map(), animations:[], visualQueue:[], processingBatch:false, currentSpeedFactor:1, frame:null, generation:0, reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches };
 const sceneState = { worldId:null, layoutKey:null, terrainKey:null, terrainLayer:null, objectLayer:null };
 const geometryCache = new Map();
@@ -159,8 +162,9 @@ async function selectWorld(worldId) {
     closeStream();
     state.liveWorld = await api(`/api/worlds/${worldId}`);
     state.world = state.liveWorld;
-    state.events = await api(`/api/worlds/${worldId}/events?limit=500`);
+    state.events = await api(`/api/worlds/${worldId}/events?limit=2000`);
     state.historical = false;
+    state.viewedRound = null;
     state.liveWorldNeedsResync = false;
     state.mentalMapsStale = false;
     state.lastCompletedSequence = state.liveWorld.pendingActionId ? Math.max(0, state.liveWorld.sequenceNumber - 1) : state.liveWorld.sequenceNumber;
@@ -179,15 +183,17 @@ function connectStream(worldId) {
     state.source.addEventListener('simulation-event', async event => {
         const data = JSON.parse(event.data);
         state.events.push(data);
-        if (state.events.length > 500) state.events.shift();
+        if (state.events.length > 2000) state.events.shift();
         if (data.sequenceNumber > state.lastCompletedSequence + 1) state.liveWorldNeedsResync = true;
         if (!state.liveWorldNeedsResync) applyWorldEvent(state.liveWorld, data);
         if (['PEON_TURN_COMPLETED', 'WORLD_FINISHED'].includes(data.eventType)) {
             if (state.liveWorldNeedsResync) await resynchronizeLiveWorld(worldId);
             if (data.eventType === 'PEON_TURN_COMPLETED') state.lastCompletedSequence = data.sequenceNumber;
-            if (!state.historical) state.world = state.liveWorld;
-            render();
-            if (!state.historical && data.eventType === 'PEON_TURN_COMPLETED') enqueueActionAnimations(state.events.filter(item => item.sequenceNumber === data.sequenceNumber));
+            const actionEvents = state.events.filter(item => item.sequenceNumber === data.sequenceNumber);
+            const completedRound = Math.min(...actionEvents.map(item => Number(item.roundNumber)));
+            const roundCompleted = data.eventType === 'PEON_TURN_COMPLETED' && Number(data.roundNumber) > completedRound;
+            if (!state.historical && (roundCompleted || data.eventType === 'WORLD_FINISHED')) { state.world = state.liveWorld; render(); }
+            if (!state.historical && roundCompleted) enqueueActionAnimations(state.events.filter(item => item.roundNumber === completedRound));
             return;
         }
     });
@@ -272,7 +278,7 @@ function renderSimulationSpeed() {
     button.disabled = false;
     button.textContent = `Vitesse ×${speed.multiplier} · ${speed.delayMilliseconds} ms`;
     const nextDelay = speed.multiplier === 1 ? Math.max(1, Math.floor(speed.delayMilliseconds / 2)) : speed.delayMilliseconds * 2;
-    button.title = speed.multiplier === 1 ? `Passer en vitesse ×2 (${nextDelay} ms par séquence)` : `Revenir en vitesse ×1 (${nextDelay} ms par séquence)`;
+    button.title = speed.multiplier === 1 ? `Passer en vitesse ×2 (${nextDelay} ms par tour cible)` : `Revenir en vitesse ×1 (${nextDelay} ms par tour cible)`;
     button.classList.toggle('fast', speed.multiplier === 2);
     button.setAttribute('aria-pressed', String(speed.multiplier === 2));
 }
@@ -284,14 +290,30 @@ async function toggleSimulationSpeed() {
     try { state.simulationSpeed = await api(`/api/simulation/speed?multiplier=${multiplier}`, { method:'POST' }); } catch (error) { window.alert(`Le changement de vitesse a échoué : ${error.message}`); } finally { renderSimulationSpeed(); }
 }
 
-async function showSequence(sequence) {
+function completedRoundEntries() {
+    const entries = new Map([[0, 0]]);
+    state.events.filter(event => event.eventType === 'PEON_TURN_COMPLETED').forEach(event => {
+        const actionRound = Math.min(...state.events.filter(item => item.sequenceNumber === event.sequenceNumber).map(item => Number(item.roundNumber)));
+        if (Number(event.roundNumber) > actionRound) entries.set(actionRound, Number(event.sequenceNumber));
+    });
+    return entries;
+}
+
+function latestCompletedRound() { return Math.max(...completedRoundEntries().keys()); }
+
+async function showRound(round) {
     if (!state.liveWorld) return;
-    const current = state.liveWorld.sequenceNumber;
-    if (Number(sequence) >= current) {
+    const selectedRound = Number(round);
+    const latestRound = latestCompletedRound();
+    if (selectedRound >= latestRound) {
         state.historical = false;
+        state.viewedRound = null;
         state.world = state.liveWorld;
     } else {
+        const sequence = completedRoundEntries().get(selectedRound);
+        if (sequence === undefined) return;
         state.historical = true;
+        state.viewedRound = selectedRound;
         state.world = await api(`/api/worlds/${state.liveWorld.id}?sequence=${sequence}`);
     }
     render();
@@ -306,7 +328,6 @@ function render() {
         clearWorldStage();
         $('#statusBadge').textContent = 'État : —';
         $('#roundValue').textContent = '—';
-        $('#sequenceValue').textContent = '—';
         $('#aliveValue').textContent = '—';
         $('#deadValue').textContent = '—';
         $('#sheepValue').textContent = '—';
@@ -316,7 +337,7 @@ function render() {
         $('#stepButton').disabled = true;
         $('#timelineSlider').max = 0;
         $('#timelineSlider').value = 0;
-        $('#timelineLabel').textContent = 'Séquence consultée : 0 / 0';
+        $('#timelineLabel').textContent = 'Tour consulté : 0 / 0';
         $('#timelinePlayButton').disabled = true;
         $('#liveButton').disabled = true;
         $('#peonEmpty').hidden = false;
@@ -332,15 +353,16 @@ function render() {
     $('#openWorldJournalButton').disabled = false;
     $('#statusBadge').textContent = `État : ${state.historical ? 'Archive' : friendlyWorldStatus(world.status)}`;
     $('#roundValue').textContent = `${world.currentRound}/${world.maxRounds}`;
-    $('#sequenceValue').textContent = world.sequenceNumber;
     renderPopulationStatistics(world);
     $('#playButton').textContent = state.liveWorld?.status === 'RUNNING' ? 'Ⅱ Mettre en pause' : state.liveWorld?.status === 'PAUSED' ? '▶ Reprendre' : '▶ Démarrer';
     $('#playButton').disabled = state.liveWorld?.status === 'FINISHED';
     $('#stepButton').disabled = state.liveWorld?.status === 'FINISHED' || state.liveWorld?.status === 'RUNNING';
-    $('#timelineSlider').max = state.liveWorld?.sequenceNumber || 0;
-    $('#timelineSlider').value = world.sequenceNumber;
-    $('#timelineLabel').textContent = `Séquence consultée : ${world.sequenceNumber} / ${state.liveWorld?.sequenceNumber || 0}`;
-    $('#timelinePlayButton').disabled = (state.liveWorld?.sequenceNumber || 0) === 0;
+    const latestRound = latestCompletedRound();
+    const displayedRound = state.historical ? state.viewedRound : latestRound;
+    $('#timelineSlider').max = latestRound;
+    $('#timelineSlider').value = displayedRound;
+    $('#timelineLabel').textContent = `Tour consulté : ${displayedRound} / ${latestRound}`;
+    $('#timelinePlayButton').disabled = latestRound === 0;
     $('#liveButton').disabled = !state.historical;
     drawWorld();
     renderSelection();
@@ -792,9 +814,17 @@ function drawPeon(peon, world, geo, presentation = {}) {
     if (!presentation.remembered && peon.id === state.selectedPeonId) marker.stroke({ color:'#ffffff', width:Math.max(1, geo.size * .09) });
     if (presentation.remembered) marker.stroke({ color:relationColor, width:Math.max(1, geo.size * .07) });
     peonContainer.addChild(marker);
-    const sprite = new PIXI.Sprite(assets.peon);
+    const isRedTeam = team?.color?.toLowerCase() === '#e85d75';
+    const walkFrames = isRedTeam ? orcWalkingFrames : humanWalkingFrames;
+    const idleTexture = isRedTeam ? walkFrames[1] : assets.peon;
+    const sprite = new PIXI.Sprite(idleTexture);
     sprite.anchor.set(.5, .88); sprite.height = spriteHeight; sprite.width = Math.min(spriteWidth, spriteHeight * sprite.texture.width / sprite.texture.height);
     peonContainer.addChild(sprite);
+    peonContainer.characterSprite = sprite;
+    peonContainer.characterWidth = sprite.width;
+    peonContainer.characterHeight = sprite.height;
+    peonContainer.idleTexture = idleTexture;
+    peonContainer.walkFrames = walkFrames;
     if (!presentation.remembered && geo.size > 9) {
         const barWidth = spriteWidth;
         const barY = -spriteHeight * .98;
@@ -883,12 +913,15 @@ function animateMovement(event) {
     const to = centerOf(event.payload.to, viewport._geometry);
     const final = { x:actor.x, y:actor.y };
     const start = { x:final.x + from.x - to.x, y:final.y + from.y - to.y };
+    const sprite = actor.characterSprite;
+    const facing = to.x < from.x ? -1 : 1;
     actor.position.set(start.x, start.y);
     queueAnimation(430, 0, progress => {
         const eased = 1 - Math.pow(1 - progress, 3);
         actor.position.set(start.x + (final.x - start.x) * eased, start.y + (final.y - start.y) * eased);
+        if (sprite && actor.walkFrames?.length) { sprite.texture = actor.walkFrames[Math.min(actor.walkFrames.length - 1, Math.floor(progress * actor.walkFrames.length))]; sprite.height = actor.characterHeight; sprite.width = actor.characterWidth * facing; }
         actor.scale.set(1 + Math.sin(progress * Math.PI * 4) * .06);
-    }, () => { actor.position.set(final.x, final.y); actor.scale.set(1); });
+    }, () => { actor.position.set(final.x, final.y); actor.scale.set(1); if (sprite) { sprite.texture = actor.idleTexture; sprite.height = actor.characterHeight; sprite.width = actor.characterWidth * facing; } });
 }
 
 function animateEating(event) {
@@ -1064,7 +1097,7 @@ function renderPeon() {
     const team = state.world.teams[peon.teamId];
     $('#peonName').textContent = peon.firstName;
     $('#peonTeam').textContent = `${team?.name || 'Sans équipe'} · ${peon.alive ? 'vivant' : 'mort'}`;
-    $('#peonAvatar').style.background = `${team?.color || '#777'} url('/assets/peon-topdown.png') center 22% / 135% auto no-repeat`;
+    $('#peonAvatar').style.background = team?.color?.toLowerCase() === '#e85d75' ? `${team.color} url('/assets/peon-walk-orc-v1.png?v=${assetVersion}') left center / 400% 100% no-repeat` : `${team?.color || '#777'} url('/assets/peon-topdown.png?v=${assetVersion}') center 22% / 135% auto no-repeat`;
     $('#peonAvatar').style.borderColor = team?.color || '#aaa';
     $('#healthBar').style.width = `${peon.healthPoints * 100 / peon.maxHealthPoints}%`;
     $('#healthValue').textContent = `${peon.healthPoints}/${peon.maxHealthPoints}`;
@@ -1120,8 +1153,8 @@ function renderPeonActions(peon) {
     const actions = visibleEvents().filter(event => event.peonId === peon.id && event.eventType === 'PEON_DECISION_MADE').slice(-8).reverse();
     $('#peonActionCount').textContent = actions.length;
     $('#peonActionLog').innerHTML = actions.length
-        ? actions.map(event => { const candidates = event.payload?.candidates || []; const selectedCandidate = candidates.find(candidate => candidate.actionType === event.payload?.actionType && (!candidate.destination || JSON.stringify(candidate.destination) === JSON.stringify(event.payload?.destination))) || candidates.find(candidate => candidate.actionType === event.payload?.actionType); const strategyEntry = Object.entries(selectedCandidate?.factors || {}).find(([key]) => key.startsWith('projet à long terme')); const strategyBonus = Number(strategyEntry?.[1] || 0); const immediateScore = Number(event.payload?.selectedScore || 0) - strategyBonus; const strategyLine = strategyEntry ? `<small class="strategy-score">Score immédiat ${immediateScore.toFixed(1)} · ${escapeHtml(strategyEntry[0])} +${strategyBonus.toFixed(1)} · score final ${Number(event.payload?.selectedScore || 0).toFixed(1)}</small>` : ''; const alternatives = candidates.slice(0, 3).map(candidate => `${friendlyAction(candidate.actionType)} ${Number(candidate.score).toFixed(1)}`).join(' · '); return `<article class="peon-action"><strong>${friendlyAction(event.payload?.actionType)} <em>score ${Number(event.payload?.selectedScore ?? 0).toFixed(1)}</em></strong><span>Tour ${event.roundNumber} · action n° ${event.sequenceNumber}${event.payload?.explorationChoice ? ' · expérimentation' : ''}</span><p>${eventDescription(event)}</p>${strategyLine}${alternatives ? `<small>Options : ${alternatives}</small>` : ''}</article>`; }).join('')
-        : '<p class="muted action-empty">Aucune action à cette étape de la simulation.</p>';
+        ? actions.map(event => { const candidates = event.payload?.candidates || []; const selectedCandidate = candidates.find(candidate => candidate.actionType === event.payload?.actionType && (!candidate.destination || JSON.stringify(candidate.destination) === JSON.stringify(event.payload?.destination))) || candidates.find(candidate => candidate.actionType === event.payload?.actionType); const strategyEntry = Object.entries(selectedCandidate?.factors || {}).find(([key]) => key.startsWith('projet à long terme')); const strategyBonus = Number(strategyEntry?.[1] || 0); const immediateScore = Number(event.payload?.selectedScore || 0) - strategyBonus; const strategyLine = strategyEntry ? `<small class="strategy-score">Score immédiat ${immediateScore.toFixed(1)} · ${escapeHtml(strategyEntry[0])} +${strategyBonus.toFixed(1)} · score final ${Number(event.payload?.selectedScore || 0).toFixed(1)}</small>` : ''; const alternatives = candidates.slice(0, 3).map(candidate => `${friendlyAction(candidate.actionType)} ${Number(candidate.score).toFixed(1)}`).join(' · '); return `<article class="peon-action"><strong>${friendlyAction(event.payload?.actionType)} <em>score ${Number(event.payload?.selectedScore ?? 0).toFixed(1)}</em></strong><span>Tour ${event.roundNumber}${event.payload?.explorationChoice ? ' · expérimentation' : ''}</span><p>${eventDescription(event)}</p>${strategyLine}${alternatives ? `<small>Options : ${alternatives}</small>` : ''}</article>`; }).join('')
+        : '<p class="muted action-empty">Aucune action pendant ce tour.</p>';
 }
 
 function renderEvents() {
@@ -1129,11 +1162,11 @@ function renderEvents() {
     $('#eventCount').textContent = events.length;
     $('#eventLog').innerHTML = events.map(event => {
         const actor = peonName(event.peonId) || 'Monde';
-        return `<article class="event"><strong>${friendlyEvent(event.eventType)}</strong><span>Tour ${event.roundNumber} · action n° ${event.sequenceNumber} · étape ${event.eventIndex} · ${actor}</span><p>${eventDescription(event)}</p></article>`;
+        return `<article class="event"><strong>${friendlyEvent(event.eventType)}</strong><span>Tour ${event.roundNumber} · ${actor}</span><p>${eventDescription(event)}</p></article>`;
     }).join('');
 }
 
-function visibleEvents() { return state.events.filter(event => event.sequenceNumber <= (state.world?.sequenceNumber ?? 0)); }
+function visibleEvents() { return state.historical ? state.events.filter(event => event.roundNumber <= state.viewedRound) : state.events; }
 function peonName(peonId) { return peonId ? state.world?.peons?.[peonId]?.firstName || state.liveWorld?.peons?.[peonId]?.firstName || `Peon ${peonId.slice(0, 8)}` : null; }
 function friendlyAction(type) { return ({ VOIR:'Observer', MANGER:'Manger des baies', MANGER_MOUTON:'Manger un mouton', MANGER_BLE:'Manger du blé', MANGER_RESERVE:'Manger sa réserve', DONNER_NOURRITURE:'Donner de la nourriture', DEMANDER_NOURRITURE:'Demander de la nourriture', TROQUER_NOURRITURE_CONTRE_BOIS:'Troquer nourriture contre bois', SE_DEPLACER:'Se déplacer', ATTAQUER:'Attaquer', COMMUNIQUER:'Communiquer', COUPER_DU_BOIS:'Couper du bois', CONSTRUIRE_MAISON:'Construire une maison', CONSTRUIRE_CHAMP:'Construire un champ', CONSTRUIRE_GRENIER:'Construire un grenier', RECOLTER:'Récolter le blé', PILLER:'Piller', NE_RIEN_FAIRE:'Ne rien faire' })[type] || type || 'Action inconnue'; }
 function friendlyPurpose(purpose) { return ({ SURVIVRE:'survivre', GAGNER_DES_NIVEAUX:'gagner des niveaux', AIDER_LES_ALLIES:'aider les autres peons' })[purpose] || purpose?.replaceAll('_', ' ').toLowerCase(); }
@@ -1297,14 +1330,14 @@ $('#mentalMapToggle').addEventListener('change', async event => {
 $('#zoomIn').addEventListener('click', () => changeZoom(.5));
 $('#zoomOut').addEventListener('click', () => changeZoom(-.5));
 $('#zoomReset').addEventListener('click', () => { resetView(); applyCameraTransform(); });
-$('#timelineSlider').addEventListener('input', event => { $('#timelineLabel').textContent = `Séquence consultée : ${event.target.value} / ${state.liveWorld?.sequenceNumber || 0}`; });
-$('#timelineSlider').addEventListener('change', event => showSequence(event.target.value));
-$('#liveButton').addEventListener('click', () => showSequence(state.liveWorld?.sequenceNumber || 0));
+$('#timelineSlider').addEventListener('input', event => { $('#timelineLabel').textContent = `Tour consulté : ${event.target.value} / ${latestCompletedRound()}`; });
+$('#timelineSlider').addEventListener('change', event => showRound(event.target.value));
+$('#liveButton').addEventListener('click', () => showRound(latestCompletedRound()));
 $('#timelinePlayButton').addEventListener('click', () => {
     if (state.timelineTimer) { clearInterval(state.timelineTimer); state.timelineTimer = null; $('#timelinePlayButton').textContent = '▶ Rejouer'; return; }
     if (Number($('#timelineSlider').value) >= Number($('#timelineSlider').max)) $('#timelineSlider').value = 0;
     $('#timelinePlayButton').textContent = 'Ⅱ Suspendre le rejeu';
-    state.timelineTimer = setInterval(async () => { const next = Number($('#timelineSlider').value) + 1; if (next > Number($('#timelineSlider').max)) { clearInterval(state.timelineTimer); state.timelineTimer = null; $('#timelinePlayButton').textContent = '▶ Rejouer'; return; } $('#timelineSlider').value = next; await showSequence(next); }, 350);
+    state.timelineTimer = setInterval(async () => { const next = Number($('#timelineSlider').value) + 1; if (next > Number($('#timelineSlider').max)) { clearInterval(state.timelineTimer); state.timelineTimer = null; $('#timelinePlayButton').textContent = '▶ Rejouer'; return; } $('#timelineSlider').value = next; await showRound(next); }, 350);
 });
 window.addEventListener('resize', drawWorld);
 

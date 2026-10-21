@@ -11,7 +11,7 @@ public class AdjustableSimulationClock implements SimulationClock {
     private final long baseDelayMilliseconds;
     private final AtomicInteger speedMultiplier = new AtomicInteger(1);
 
-    public AdjustableSimulationClock(@Value("${simulator.clock.delay-ms:600}") long baseDelayMilliseconds) {
+    public AdjustableSimulationClock(@Value("${simulator.clock.delay-ms:1000}") long baseDelayMilliseconds) {
         if (baseDelayMilliseconds <= 0) { throw new IllegalArgumentException("Le délai de simulation doit être supérieur à zéro"); }
         this.baseDelayMilliseconds = baseDelayMilliseconds;
     }
