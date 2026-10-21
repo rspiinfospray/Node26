@@ -43,7 +43,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         if (context.healthPoints() < context.maxHealthPoints() && context.storedFoodQuantity() > 0) { candidates.add(this.scoreEatStoredFood(context, situationKey)); }
         context.peonsOnCurrentCell().stream().filter(ally -> ally.teamId().equals(context.teamId()) && ally.foodQuantity() < ally.maxHealthPoints() - ally.healthPoints() && context.storedFoodQuantity() > 0).forEach(ally -> candidates.add(this.scoreGiveFood(context, ally, situationKey)));
         if (context.healthPoints() < context.maxHealthPoints() && context.storedFoodQuantity() == 0) { context.peonsOnCurrentCell().stream().filter(ally -> ally.teamId().equals(context.teamId()) && ally.foodQuantity() > 0).forEach(ally -> candidates.add(this.scoreRequestFood(context, ally, situationKey))); }
-        if (context.storedFoodQuantity() > 0 && context.woodQuantity() < this.strategicWoodTarget(context)) { context.peonsOnCurrentCell().stream().filter(ally -> ally.teamId().equals(context.teamId()) && ally.woodQuantity() > 0 && ally.foodQuantity() < 300).forEach(ally -> candidates.add(this.scoreTradeFoodForWood(context, ally, situationKey))); }
+        if (this.tradeableFood(context) > 0 && context.woodQuantity() < this.strategicWoodTarget(context)) { context.peonsOnCurrentCell().stream().filter(ally -> ally.teamId().equals(context.teamId()) && ally.woodQuantity() > 0 && ally.foodQuantity() < 300).forEach(ally -> candidates.add(this.scoreTradeFoodForWood(context, ally, situationKey))); }
         if (context.field() != null && context.teamId().equals(context.field().teamId()) && context.field().wheatQuantity() > 0 && context.knownGranaries().stream().anyMatch(granary -> context.teamId().equals(granary.teamId()))) { candidates.add(this.scoreHarvest(context, situationKey)); }
         if (context.currentTerrain() == TerrainType.TREE && context.treeHealthPoints() > 0) { candidates.add(this.scoreChopWood(context, situationKey)); }
         if (context.buildable() && context.woodQuantity() >= this.defaults.getWoodRequiredForHouse()) { candidates.add(this.scoreBuildHouse(context, situationKey)); }
@@ -70,16 +70,17 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         List<WeightedAction> safeCandidates = candidates.stream().filter(candidate -> !this.isPredictablyLethal(context, candidate.action())).toList();
         List<WeightedAction> selectionCandidates = safeCandidates.isEmpty() ? candidates : safeCandidates;
         if (survivalTarget != null && this.healthPercentage(context) <= this.defaults.getSeekFoodHealthThreshold()) {
-            List<WeightedAction> survivalCandidates = selectionCandidates.stream().filter(candidate -> this.movesToward(candidate.action(), context.position(), survivalTarget.position()) || this.isEating(candidate.action())).toList();
+            List<WeightedAction> survivalCandidates = selectionCandidates.stream().filter(candidate -> this.isEating(candidate.action()) || this.movesToward(candidate.action(), context.position(), survivalTarget.position()) && this.canSurviveUntil(context, candidate.action(), survivalTarget.position())).toList();
             if (!survivalCandidates.isEmpty()) { selectionCandidates = survivalCandidates; }
         }
         List<WeightedAction> thresholdSafeCandidates = selectionCandidates.stream().filter(candidate -> this.respectsSurvivalThreshold(context, candidate.action(), survivalTarget, safeHouse)).toList();
         if (!thresholdSafeCandidates.isEmpty()) { selectionCandidates = thresholdSafeCandidates; }
-        WeightedAction best = selectionCandidates.get(0);
+        List<WeightedAction> admissibleCandidates = selectionCandidates;
+        WeightedAction best = admissibleCandidates.get(0);
         boolean exploration = false;
         WeightedAction selected = best;
         PeonAction action = new PeonAction(selected.action().type(), selected.action().destination(), selected.action().targetPeonId(), selected.action().purpose(), this.explanation(selected, exploration));
-        List<PeonDecision.CandidateScore> scores = candidates.stream().map(candidate -> new PeonDecision.CandidateScore(candidate.action().type(), candidate.action().destination(), candidate.action().targetPeonId(), this.round(candidate.score()), candidate.factors())).toList();
+        List<PeonDecision.CandidateScore> scores = candidates.stream().map(candidate -> new PeonDecision.CandidateScore(candidate.action().type(), candidate.action().destination(), candidate.action().targetPeonId(), this.round(candidate.score()), candidate.factors(), admissibleCandidates.contains(candidate), admissibleCandidates.contains(candidate) ? null : this.exclusionReason(context, candidate.action(), survivalTarget, safeHouse))).toList();
         return new PeonDecision(action, situationKey, this.round(selected.score()), exploration, scores);
     }
 
@@ -150,10 +151,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     private WeightedAction scoreTradeFoodForWood(PeonDecisionContext context, PeonDecisionContext.ObservedPeon ally, String situationKey) {
         Map<String, Double> factors = new LinkedHashMap<>();
         factors.put("besoin de bois", Math.min(80, this.strategicWoodTarget(context) - context.woodQuantity()) * 0.55);
-        factors.put("nourriture échangeable", Math.min(50, context.storedFoodQuantity()) * 0.35);
+        factors.put("nourriture échangeable", Math.min(50, this.tradeableFood(context)) * 0.35);
         factors.put("bois disponible chez l’allié", Math.min(50, ally.woodQuantity()) * 0.35);
         factors.put("ingéniosité commerciale", context.personality().getIngenuity() * 0.55);
-        if (context.storedFoodQuantity() < 30) { factors.put("préserver une réserve alimentaire", -30.0); }
+        factors.put("réserve alimentaire conservée", this.minimumFoodReserve(context) * 0.5);
         this.addLearning(context, situationKey, ActionType.TROQUER_NOURRITURE_CONTRE_BOIS, factors);
         return this.weighted(context, new PeonAction(ActionType.TROQUER_NOURRITURE_CONTRE_BOIS, null, ally.id(), PeonPurpose.AIDER_LES_ALLIES, ""), factors);
     }
@@ -189,9 +190,9 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         return this.fieldsAround(context, granary).size() < this.targetFieldCount(context);
     }
 
-    private PeonDecisionContext.ObservedGranary closestAlliedGranaryForFieldSite(PeonDecisionContext context) { return context.knownGranaries().stream().filter(granary -> context.teamId().equals(granary.teamId()) && granary.position().distanceTo(context.position()) <= this.defaults.getFieldGranaryRadius()).min(Comparator.comparingInt(granary -> granary.position().distanceTo(context.position()))).orElse(null); }
+    private PeonDecisionContext.ObservedGranary closestAlliedGranaryForFieldSite(PeonDecisionContext context) { return context.knownGranaries().stream().filter(granary -> context.teamId().equals(granary.teamId()) && granary.position().distanceTo(context.position()) <= this.defaults.getConstructionInfluenceRadius()).min(Comparator.comparingInt(granary -> granary.position().distanceTo(context.position()))).orElse(null); }
 
-    private List<PeonDecisionContext.ObservedField> fieldsAround(PeonDecisionContext context, PeonDecisionContext.ObservedGranary granary) { return granary == null ? List.of() : context.knownFields().stream().filter(field -> context.teamId().equals(field.teamId()) && field.position().distanceTo(granary.position()) <= this.defaults.getFieldGranaryRadius()).toList(); }
+    private List<PeonDecisionContext.ObservedField> fieldsAround(PeonDecisionContext context, PeonDecisionContext.ObservedGranary granary) { return granary == null ? List.of() : context.knownFields().stream().filter(field -> context.teamId().equals(field.teamId()) && field.position().distanceTo(granary.position()) <= this.defaults.getConstructionInfluenceRadius()).toList(); }
 
     private int targetFieldCount(PeonDecisionContext context) { return Math.max(3, (int) Math.ceil(context.livingTeamPeonCount() / 2.0) + 1); }
 
@@ -370,7 +371,10 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
             String legacySituationKey = situationKey.replace(":AUCUNE_TOMBE_CONNUE", "").replace(":TOMBE_CONNUE", "").replace(":BOIS_INCOMPLET", "").replace(":BOIS_COMPLET", "").replace(":BUTIN_PRESENT", "").replace(":BUTIN_INCONNU", "").replace(":BUTIN_CONNU", "").replace(":SANS_ABRI", "").replace(":ABRITE", "").replace(":MOUTON_PRESENT", "").replace(":MOUTON_CONNU", "").replace(":MOUTON_INCONNU", "");
             knowledge = context.learnedActions().get(legacySituationKey + "|" + actionType.name());
         }
-        if (knowledge != null) { factors.put("expérience passée", knowledge.getExpectedReward()); }
+        if (knowledge != null) {
+            factors.put("expérience passée", knowledge.getExpectedReward());
+            if (knowledge.getAttempts() >= 2 && knowledge.getFailures() > 0) { factors.put("échecs répétés", -Math.min(60.0, knowledge.getFailures() * 8.0 + knowledge.getFailures() * 20.0 / knowledge.getAttempts())); }
+        }
     }
 
     private WeightedAction weighted(PeonDecisionContext context, PeonAction action, Map<String, Double> factors) {
@@ -403,7 +407,7 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
         int destinationDistance = destination.distanceTo(strategy.getTargetArea());
         int maximumDistance = switch (strategy.getPhase()) {
             case CONSTRUIRE_UN_GRENIER -> 2;
-            case CREER_UN_PREMIER_CHAMP, ETENDRE_L_EXPLOITATION -> this.defaults.getFieldGranaryRadius();
+            case CREER_UN_PREMIER_CHAMP, ETENDRE_L_EXPLOITATION -> this.defaults.getConstructionInfluenceRadius();
             default -> 0;
         };
         if (maximumDistance == 0) { return 0; }
@@ -537,8 +541,28 @@ public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
     private boolean respectsSurvivalThreshold(PeonDecisionContext context, PeonAction action, FoodTarget survivalTarget, PeonDecisionContext.ObservedHouse safeHouse) {
         if (this.projectedHealth(context, action) >= context.maxHealthPoints() * this.defaults.getEnemyFleeHealthThreshold() / 100.0) { return true; }
         if (this.isEating(action)) { return true; }
-        if (survivalTarget != null && this.movesToward(action, context.position(), survivalTarget.position())) { return true; }
+        if (survivalTarget != null && this.movesToward(action, context.position(), survivalTarget.position()) && this.canSurviveUntil(context, action, survivalTarget.position())) { return true; }
         return safeHouse != null && action.type() == ActionType.SE_DEPLACER && action.destination() != null && action.destination().distanceTo(safeHouse.position()) < context.position().distanceTo(safeHouse.position());
+    }
+
+    private boolean canSurviveUntil(PeonDecisionContext context, PeonAction action, HexCoordinate target) {
+        if (action.destination() == null) { return false; }
+        int remainingSteps = action.destination().distanceTo(target);
+        int healthPerStep = this.defaults.getMoveHealthCost() + this.defaults.getHungerHealthLossPerTurn();
+        return this.projectedHealth(context, action) - remainingSteps * healthPerStep > 0;
+    }
+
+    private int minimumFoodReserve(PeonDecisionContext context) {
+        int turns = this.healthPercentage(context) <= this.defaults.getSeekFoodHealthThreshold() ? 5 : 2;
+        return turns * this.defaults.getHungerHealthLossPerTurn();
+    }
+
+    private int tradeableFood(PeonDecisionContext context) { return Math.max(0, context.storedFoodQuantity() - this.minimumFoodReserve(context)); }
+
+    private String exclusionReason(PeonDecisionContext context, PeonAction action, FoodTarget survivalTarget, PeonDecisionContext.ObservedHouse safeHouse) {
+        if (this.isPredictablyLethal(context, action)) { return "issue prévisible létale"; }
+        if (!this.respectsSurvivalThreshold(context, action, survivalTarget, safeHouse)) { return "seuil de survie non respecté"; }
+        return "priorité de survie";
     }
 
     private int projectedHealth(PeonDecisionContext context, PeonAction action) {

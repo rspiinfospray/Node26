@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 
 class RunAutoCorrectionCycleCommandTest {
     @Test
-    void shouldApplyValidateDeployAndRelaunchOnCurrentBranch() {
+    void shouldApplyValidateDeployAndRelaunch() {
         AutoCorrectionReportRepository reports = mock(AutoCorrectionReportRepository.class);
         CodexCorrectionAgent codex = mock(CodexCorrectionAgent.class);
         CorrectionWorkspace workspace = mock(CorrectionWorkspace.class);
@@ -35,15 +35,11 @@ class RunAutoCorrectionCycleCommandTest {
 
         assertEquals(AutoCorrectionResult.Status.COMPLETED, result.status());
         InOrder order = inOrder(workspace, codex, launcher, reports);
-        order.verify(workspace).verifyBranch();
         order.verify(workspace).snapshot();
         order.verify(codex).apply(report, 1);
-        order.verify(workspace).verifyBranch();
         order.verify(workspace).snapshot();
         order.verify(workspace).runTests();
-        order.verify(workspace).verifyBranch();
         order.verify(workspace).deploy();
-        order.verify(workspace).verifyBranch();
         order.verify(launcher).launch(1);
         order.verify(reports).markCompleted(report);
     }

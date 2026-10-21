@@ -29,16 +29,12 @@ public class RunAutoCorrectionCycleCommand {
         if (report == null) { return new AutoCorrectionResult(AutoCorrectionResult.Status.NO_REPORT, "Aucun nouveau rapport"); }
         int cycleNumber = completedCycles + 1;
         try {
-            this.workspace.verifyBranch();
             WorkspaceSnapshot beforeCodex = this.workspace.snapshot();
             CodexCorrectionResult correction = this.codexAgent.apply(report, cycleNumber);
-            this.workspace.verifyBranch();
             WorkspaceSnapshot afterCodex = this.workspace.snapshot();
             this.validateCorrection(beforeCodex, afterCodex, correction);
             this.workspace.runTests();
-            this.workspace.verifyBranch();
             this.workspace.deploy();
-            this.workspace.verifyBranch();
             this.simulationLauncher.launch(cycleNumber);
             this.reportRepository.markCompleted(report);
             return new AutoCorrectionResult(AutoCorrectionResult.Status.COMPLETED, "Cycle " + cycleNumber + " terminé pour " + report.getFileName());

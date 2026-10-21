@@ -396,7 +396,7 @@ public class Illuvatar {
         List<PeonDecisionContext.ObservedField> knownFields = world.getWheatFields().values().stream().filter(value -> knownCoordinates.contains(World.key(value.getPosition()))).map(value -> new PeonDecisionContext.ObservedField(value.getId(), value.getTeamId(), value.getPosition(), value.getWheatQuantity())).toList();
         List<PeonDecisionContext.ObservedGranary> knownGranaries = world.getGranaries().values().stream().filter(value -> knownCoordinates.contains(World.key(value.getPosition()))).map(value -> new PeonDecisionContext.ObservedGranary(value.getId(), value.getTeamId(), value.getPosition(), value.getWheatQuantity())).toList();
         boolean sameTeamHouseNearby = world.getHouses().values().stream().filter(candidate -> candidate.getPosition().distanceTo(peon.getPosition()) >= 1 && candidate.getPosition().distanceTo(peon.getPosition()) <= 2).flatMap(candidate -> candidate.getOwnerPeonIds().stream()).map(world.getPeons()::get).anyMatch(owner -> owner != null && owner.isAlive() && owner.getTeamId().equals(peon.getTeamId()));
-        boolean alliedGranaryNearFieldSite = world.hasAlliedGranaryWithin(peon.getPosition(), peon.getTeamId(), this.defaults.getFieldGranaryRadius());
+        boolean alliedGranaryNearFieldSite = world.hasAlliedGranaryWithin(peon.getPosition(), peon.getTeamId(), this.defaults.getConstructionInfluenceRadius());
         int livingTeamPeonCount = (int) world.alivePeons().stream().filter(ally -> ally.getTeamId().equals(peon.getTeamId())).count();
         return new PeonDecisionContext(peon.getId(), peon.getTeamId(), peon.getHealthPoints(), peon.getMaxHealthPoints(), peon.getExperiencePoints(), peon.getLevel(), peon.getPosition(), current.getTerrain() == TerrainType.TREE, world.getSequenceNumber(), world.getSeed(), peon.getPersonality(), Map.copyOf(peon.getLearnedActions()), Map.copyOf(peon.getMentalMap()), occupants, current.getFoodQuantity(), neighbors, world.getCurrentRound(), peon.getLastObservationRound(), current.getTerrain(), current.getTreeHealthPoints(), peon.itemCount(ItemType.WOOD), peon.itemCount(ItemType.FOOD), woodBundleQuantity, buildable, observedHouse, knownHouses, usefulCommunicationCount, consecutiveCommunicationCount, sheepOnCurrentCell, knownSheepPositions, observedField, observedGranary, knownFields, knownGranaries, buildable && alliedGranaryNearFieldSite, buildable && sameTeamHouseNearby, livingTeamPeonCount, peon.getLongTermStrategy());
     }
@@ -584,7 +584,7 @@ public class Illuvatar {
     private void buildField(World world, Peon actor, ActionRequest request, List<SimulationEvent> events, int[] index) {
         if (!this.isFreeConstructionSite(world, actor)) { this.reject(world, actor, request, events, index, "INVALID_FIELD_SITE"); return; }
         if (world.isInsideEnemyConstructionInfluence(actor.getPosition(), actor.getTeamId(), this.defaults.getConstructionInfluenceRadius())) { this.reject(world, actor, request, events, index, "ENEMY_CONSTRUCTION_INFLUENCE"); return; }
-        Granary attachedGranary = world.closestAlliedGranaryWithin(actor.getPosition(), actor.getTeamId(), this.defaults.getFieldGranaryRadius());
+        Granary attachedGranary = world.closestAlliedGranaryWithin(actor.getPosition(), actor.getTeamId(), this.defaults.getConstructionInfluenceRadius());
         if (attachedGranary == null) { this.reject(world, actor, request, events, index, "NO_ALLIED_GRANARY_IN_RANGE"); return; }
         if (!actor.removeItem(ItemType.WOOD, this.defaults.getWoodRequiredForField())) { this.reject(world, actor, request, events, index, "NOT_ENOUGH_WOOD"); return; }
         WheatField field = new WheatField(UUID.randomUUID(), actor.getPosition(), actor.getTeamId(), attachedGranary.getId(), world.getCurrentRound() + this.defaults.getFieldGrowthRounds());
@@ -685,7 +685,9 @@ public class Illuvatar {
         if (partner == null) { this.reject(world, actor, request, events, index, "INVALID_ALLIED_TRADE_TARGET"); return; }
         double acceptance = partner.getPersonality().getIngenuity() * 0.5 + partner.getPersonality().getSolidarity() * 0.35 - partner.getPersonality().getPrudence() * 0.2;
         int maximum = 10 + actor.getPersonality().getIngenuity() / 2;
-        int quantity = Math.min(maximum, Math.min(actor.itemCount(ItemType.FOOD), Math.min(partner.itemCount(ItemType.WOOD), Math.min(actor.remainingCapacity(ItemType.WOOD), partner.remainingCapacity(ItemType.FOOD)))));
+        int reserveTurns = actor.getHealthPoints() * 100 / actor.getMaxHealthPoints() <= this.defaults.getSeekFoodHealthThreshold() ? 5 : 2;
+        int tradeableFood = Math.max(0, actor.itemCount(ItemType.FOOD) - reserveTurns * this.defaults.getHungerHealthLossPerTurn());
+        int quantity = Math.min(maximum, Math.min(tradeableFood, Math.min(partner.itemCount(ItemType.WOOD), Math.min(actor.remainingCapacity(ItemType.WOOD), partner.remainingCapacity(ItemType.FOOD)))));
         events.add(this.event(world, request, actor, "RESOURCE_TRADE_PROPOSED", index, Map.of("partnerPeonId", partner.getId(), "foodOffered", quantity, "woodRequested", quantity)));
         if (acceptance < 30 || quantity <= 0) { events.add(this.event(world, request, partner, "RESOURCE_TRADE_REFUSED", index, Map.of("requesterPeonId", actor.getId()))); return; }
         actor.removeItem(ItemType.FOOD, quantity);

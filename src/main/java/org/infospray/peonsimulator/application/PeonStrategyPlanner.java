@@ -29,7 +29,8 @@ public class PeonStrategyPlanner {
         LongTermStrategy current = peon.getLongTermStrategy();
         boolean fullEvaluation = current == null || world.getCurrentRound() - current.getLastEvaluatedAtRound() >= REEVALUATION_ROUNDS;
         if (fullEvaluation) {
-            StrategyType selected = current != null && world.getCurrentRound() < current.getCommitmentUntilRound() ? current.getType() : this.selectStrategy(peon, situation, world.getCurrentRound());
+            boolean stalled = current != null && current.getStagnantEvaluations() >= 2;
+            StrategyType selected = current != null && !stalled && world.getCurrentRound() < current.getCommitmentUntilRound() ? current.getType() : this.selectStrategy(peon, situation, world.getCurrentRound(), stalled ? current.getType() : null);
             if (current == null || selected != current.getType()) {
                 current = new LongTermStrategy(selected, world.getCurrentRound(), peon.getTeamId());
                 current.setCommitmentUntilRound(world.getCurrentRound() + COMMITMENT_ROUNDS);
@@ -40,8 +41,15 @@ public class PeonStrategyPlanner {
             current.setExpectedValue(this.strategyScores(peon, situation, world.getCurrentRound()).get(selected));
             current.setLastEvaluatedAtRound(world.getCurrentRound());
         }
+        double previousProgress = current.getProgress();
         StrategicPhase previousPhase = current.getPhase();
         this.updateProgress(current, situation, peon, defaults);
+        if (current.getProgress() > previousProgress + 0.5 || current.getStatus() == StrategyStatus.ACCOMPLIE) {
+            current.setLastProgressAtRound(world.getCurrentRound());
+            current.setStagnantEvaluations(0);
+        } else if (fullEvaluation) {
+            current.setStagnantEvaluations(current.getStagnantEvaluations() + 1);
+        }
         if (current.getPhase() != previousPhase) { current.setTacticalUntilRound(world.getCurrentRound() + 5); }
         return fullEvaluation;
     }
@@ -62,8 +70,8 @@ public class PeonStrategyPlanner {
         return new StrategicSituation(allies.size(), houses, granaries, fields, storedWheat, targetFields, safetyStock, knownEnemies, exploredPercentage, assignments, ownsHouse);
     }
 
-    private StrategyType selectStrategy(Peon peon, StrategicSituation situation, int currentRound) {
-        return this.strategyScores(peon, situation, currentRound).entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(StrategyType.EXPLORER_LE_MONDE);
+    private StrategyType selectStrategy(Peon peon, StrategicSituation situation, int currentRound, StrategyType excluded) {
+        return this.strategyScores(peon, situation, currentRound).entrySet().stream().filter(entry -> entry.getKey() != excluded).max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(StrategyType.EXPLORER_LE_MONDE);
     }
 
     private Map<StrategyType, Double> strategyScores(Peon peon, StrategicSituation situation, int currentRound) {

@@ -15,7 +15,7 @@ Objectif :
 
 Contraintes impératives :
 
-- La branche courante doit rester `analyse`. N'exécute jamais `git switch`, `git checkout`, `git branch`, `git reset`, `git clean`, `git commit`, `git merge`, `git rebase` ou `git push`.
+- N'exécute jamais `git switch`, `git checkout`, `git branch`, `git reset`, `git clean`, `git commit`, `git merge`, `git rebase` ou `git push`.
 - Respecte intégralement `AGENTS.md` et l'architecture hexagonale.
 - Ne modifie jamais `.env`, `docker-compose.yml`, `Dockerfile`, le superviseur automatique, son prompt ou les rapports.
 - Ne redéploie rien et ne lance pas une nouvelle simulation : le superviseur Java s'en charge après validation.

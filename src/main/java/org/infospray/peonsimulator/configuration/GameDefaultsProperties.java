@@ -63,7 +63,6 @@ public class GameDefaultsProperties {
     private int harvestExperienceGain = 20;
     private int buildFieldExperienceGain = 35;
     private int buildGranaryExperienceGain = 50;
-    private int fieldGranaryRadius = 4;
     private int constructionInfluenceRadius = 2;
 
     public int getWorldWidth() { return this.worldWidth; }
@@ -180,8 +179,6 @@ public class GameDefaultsProperties {
     public void setBuildFieldExperienceGain(int value) { this.buildFieldExperienceGain = value; }
     public int getBuildGranaryExperienceGain() { return this.buildGranaryExperienceGain; }
     public void setBuildGranaryExperienceGain(int value) { this.buildGranaryExperienceGain = value; }
-    public int getFieldGranaryRadius() { return this.fieldGranaryRadius; }
-    public void setFieldGranaryRadius(int value) { this.fieldGranaryRadius = value; }
     public int getConstructionInfluenceRadius() { return this.constructionInfluenceRadius; }
     public void setConstructionInfluenceRadius(int value) { this.constructionInfluenceRadius = Math.max(0, value); }
 }

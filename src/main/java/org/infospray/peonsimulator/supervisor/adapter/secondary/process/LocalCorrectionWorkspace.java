@@ -15,17 +15,9 @@ import java.util.Map;
 
 public class LocalCorrectionWorkspace implements CorrectionWorkspace {
     private final Path projectDirectory;
-    private final String requiredBranch;
 
-    public LocalCorrectionWorkspace(Path projectDirectory, String requiredBranch) {
+    public LocalCorrectionWorkspace(Path projectDirectory) {
         this.projectDirectory = projectDirectory;
-        this.requiredBranch = requiredBranch;
-    }
-
-    @Override
-    public void verifyBranch() {
-        String branch = ProcessExecution.run(this.projectDirectory, Duration.ofSeconds(20), null, List.of("git", "branch", "--show-current"));
-        if (!this.requiredBranch.equals(branch)) { throw new IllegalStateException("Branche interdite: " + branch + ". La branche exigée est " + this.requiredBranch); }
     }
 
     @Override

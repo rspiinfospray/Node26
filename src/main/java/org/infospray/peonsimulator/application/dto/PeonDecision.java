@@ -9,6 +9,6 @@ import java.util.Map;
 import java.util.UUID;
 
 public record PeonDecision(PeonAction action, String situationKey, double selectedScore, boolean explorationChoice, List<CandidateScore> candidates) {
-    public record CandidateScore(ActionType actionType, HexCoordinate destination, UUID targetPeonId, double score, Map<String, Double> factors) {
+    public record CandidateScore(ActionType actionType, HexCoordinate destination, UUID targetPeonId, double score, Map<String, Double> factors, boolean admissible, String exclusionReason) {
     }
 }

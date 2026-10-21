@@ -5,16 +5,14 @@ Le superviseur est un programme Java indépendant du backend. Tout son code est 
 ## Séquence d'un cycle
 
 1. Sélection du rapport terminé le plus récent et encore non traité.
-2. Vérification que la branche Git courante est exactement `analyse`.
-3. Exécution non interactive de `codex exec` avec le sandbox `danger-full-access`, nécessaire pour autoriser les modifications et les tests dans l'environnement Windows local.
-4. Vérification obligatoire d'un compte rendu Codex non vide et d'au moins une modification dans `src/main/java` ou `src/test/java`.
-5. Nouvelle vérification de la branche.
-6. Exécution de `docker compose build backend`, qui compile et lance les tests Maven.
-7. Redéploiement par `docker compose up -d backend`.
-8. Attente de la disponibilité de l'API.
-9. Création et démarrage d'un monde utilisant la même configuration et la même graine que le dernier monde terminé.
+2. Exécution non interactive de `codex exec` avec le sandbox `danger-full-access`, nécessaire pour autoriser les modifications et les tests dans l'environnement Windows local.
+3. Vérification obligatoire d'un compte rendu Codex non vide et d'au moins une modification dans `src/main/java` ou `src/test/java`.
+4. Exécution de `docker compose build backend`, qui compile et lance les tests Maven.
+5. Redéploiement par `docker compose up -d backend`.
+6. Attente de la disponibilité de l'API.
+7. Création et démarrage d'un monde utilisant la même configuration et la même graine que le dernier monde terminé.
 
-Le superviseur ne crée, ne change et ne fusionne aucune branche. Toute divergence par rapport à `analyse` arrête immédiatement le cycle.
+Le superviseur travaille sur la branche courante sans la créer, la changer ou la fusionner.
 
 ## Prérequis
 
@@ -47,7 +45,6 @@ Les variables suivantes sont facultatives :
 |---|---:|---|
 | `AUTOFIX_PROJECT_DIRECTORY` | `.` | Racine du dépôt |
 | `AUTOFIX_REPORT_DIRECTORY` | `reports` | Répertoire surveillé |
-| `AUTOFIX_REQUIRED_BRANCH` | `analyse` | Branche obligatoire |
 | `AUTOFIX_MAXIMUM_CYCLES` | `3` | Nombre maximal de corrections |
 | `AUTOFIX_POLL_SECONDS` | `15` | Fréquence de surveillance |
 | `AUTOFIX_API_BASE_URL` | `http://localhost:8080` | URL du backend |
@@ -57,4 +54,4 @@ Les marqueurs de succès et d'échec sont enregistrés dans `reports/autofix-sta
 
 ## Arrêt et erreurs
 
-Le superviseur s'arrête sans redéployer si Codex échoue, si la branche change, si la compilation ou les tests échouent, si Docker échoue ou si la nouvelle simulation ne peut pas être lancée. Un rapport en échec reçoit un marqueur `.failed` et n'est pas retraité automatiquement.
+Le superviseur s'arrête sans redéployer si Codex échoue, si la compilation ou les tests échouent, si Docker échoue ou si la nouvelle simulation ne peut pas être lancée. Un rapport en échec reçoit un marqueur `.failed` et n'est pas retraité automatiquement.

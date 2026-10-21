@@ -87,6 +87,22 @@ class PeonStrategyPlannerTest {
     }
 
     @Test
+    void shouldAbandonAStagnantStrategyAfterTwoReevaluations() {
+        Fixture fixture = this.agriculturalFixture();
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+        StrategyType initialType = fixture.peon().getLongTermStrategy().getType();
+        fixture.world().setCurrentRound(6);
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+        fixture.world().setCurrentRound(11);
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+        fixture.world().setCurrentRound(16);
+
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+
+        assertThat(fixture.peon().getLongTermStrategy().getType()).isNotEqualTo(initialType);
+    }
+
+    @Test
     void shouldDiversifyStrategyWhenAgricultureIsAlreadyCovered() {
         Fixture fixture = this.agriculturalFixture();
         Peon agriculturalAlly = new Peon(UUID.randomUUID(), "Borin", fixture.peon().getTeamId(), new HexCoordinate(3, 0));

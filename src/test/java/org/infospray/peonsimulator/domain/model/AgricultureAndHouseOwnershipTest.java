@@ -8,18 +8,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AgricultureAndHouseOwnershipTest {
     @Test
-    void fieldRequiresAnAlliedGranaryWithinFourCells() {
+    void fieldRequiresAnAlliedGranaryWithinInfluenceRadius() {
         UUID teamId = UUID.randomUUID();
         World world = new World();
-        Granary alliedAtLimit = new Granary(UUID.randomUUID(), new HexCoordinate(4, 0), teamId);
+        Granary alliedAtLimit = new Granary(UUID.randomUUID(), new HexCoordinate(2, 0), teamId);
         Granary enemyNearby = new Granary(UUID.randomUUID(), new HexCoordinate(1, 0), UUID.randomUUID());
         world.getGranaries().put(alliedAtLimit.getId(), alliedAtLimit);
         world.getGranaries().put(enemyNearby.getId(), enemyNearby);
-        assertThat(world.hasAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 4)).isTrue();
-        assertThat(world.closestAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 4)).isEqualTo(alliedAtLimit);
-        alliedAtLimit.setPosition(new HexCoordinate(5, 0));
-        assertThat(world.hasAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 4)).isFalse();
-        assertThat(world.closestAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 4)).isNull();
+        assertThat(world.hasAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 2)).isTrue();
+        assertThat(world.closestAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 2)).isEqualTo(alliedAtLimit);
+        alliedAtLimit.setPosition(new HexCoordinate(3, 0));
+        assertThat(world.hasAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 2)).isFalse();
+        assertThat(world.closestAlliedGranaryWithin(new HexCoordinate(0, 0), teamId, 2)).isNull();
     }
 
     @Test

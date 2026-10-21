@@ -326,7 +326,30 @@ class RuleBasedPeonDecisionProviderTest {
         RuleBasedPeonDecisionProvider exploringProvider = new RuleBasedPeonDecisionProvider(properties);
         PeonDecisionContext context = this.context(6, false, Map.of(), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2)));
 
-        assertThat(exploringProvider.decide(context).action().type()).isNotEqualTo(ActionType.SE_DEPLACER);
+        PeonDecision decision = exploringProvider.decide(context);
+        assertThat(decision.action().type()).isNotEqualTo(ActionType.SE_DEPLACER);
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.SE_DEPLACER).findFirst().orElseThrow().admissible()).isFalse();
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.SE_DEPLACER).findFirst().orElseThrow().exclusionReason()).contains("létale");
+    }
+
+    @Test
+    void shouldPreserveFoodReserveInsteadOfOfferingTrade() {
+        UUID teamId = UUID.randomUUID();
+        PeonDecisionContext.ObservedPeon ally = new PeonDecisionContext.ObservedPeon(UUID.randomUUID(), teamId, 100, 100, 1, 100, 0);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.randomUUID(), teamId, 30, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 90), Map.of(), Map.of(), List.of(ally), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 20, 0, false, null, List.of(), 0, 0, 0, List.of(), null, null, List.of(), List.of(), false, false, 2, null);
+
+        assertThat(this.provider.decide(context).candidates()).extracting(PeonDecision.CandidateScore::actionType).doesNotContain(ActionType.TROQUER_NOURRITURE_CONTRE_BOIS);
+    }
+
+    @Test
+    void shouldPenalizeAnActionAfterRepeatedFailures() {
+        ActionKnowledge knowledge = new ActionKnowledge();
+        knowledge.learn(-5, 1);
+        knowledge.learn(-5, 1);
+        String situation = "PV_ELEVES:SEUL:NOURRITURE_INCONNUE:MOUTON_INCONNU:AUCUNE_TOMBE_CONNUE:BOIS_INCOMPLET:BUTIN_INCONNU:SANS_ABRI:DECOUVERT";
+        PeonDecision decision = this.provider.decide(this.context(80, false, Map.of(situation + "|NE_RIEN_FAIRE", knowledge), Map.of(), List.of(), 0, List.of()));
+
+        assertThat(decision.candidates().stream().filter(candidate -> candidate.actionType() == ActionType.NE_RIEN_FAIRE).findFirst().orElseThrow().factors()).containsKey("échecs répétés");
     }
 
     @Test
@@ -417,7 +440,8 @@ class RuleBasedPeonDecisionProviderTest {
         UUID teamId = UUID.randomUUID();
         HexCoordinate position = new HexCoordinate(2, 2);
         PeonDecisionContext.ObservedGranary granary = new PeonDecisionContext.ObservedGranary(UUID.randomUUID(), teamId, new HexCoordinate(3, 2), storedWheat);
-        List<PeonDecisionContext.ObservedField> fields = java.util.stream.IntStream.range(0, fieldCount).mapToObj(index -> new PeonDecisionContext.ObservedField(UUID.randomUUID(), teamId, new HexCoordinate(3 + index, 3), 0)).toList();
+        List<HexCoordinate> fieldPositions = List.of(new HexCoordinate(3, 3), new HexCoordinate(4, 2), new HexCoordinate(4, 1), new HexCoordinate(3, 1));
+        List<PeonDecisionContext.ObservedField> fields = java.util.stream.IntStream.range(0, fieldCount).mapToObj(index -> new PeonDecisionContext.ObservedField(UUID.randomUUID(), teamId, fieldPositions.get(index), 0)).toList();
         return new PeonDecisionContext(UUID.randomUUID(), teamId, 100, 100, 0, 1, position, false, 10, 42, new PeonPersonality(50, 50, 50, 70), Map.of(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 200, 0, true, null, List.of(), 0, 0, 0, List.of(), null, null, fields, List.of(granary), true, false, 6, null);
     }
 

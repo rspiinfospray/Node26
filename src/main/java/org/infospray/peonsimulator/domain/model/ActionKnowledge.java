@@ -21,6 +21,6 @@ public class ActionKnowledge {
     public void learn(double reward, double learningRate) {
         this.expectedReward += learningRate * (reward - this.expectedReward);
         this.attempts++;
-        if (reward >= 0) { this.successes++; } else { this.failures++; }
+        if (reward > 0) { this.successes++; } else { this.failures++; }
     }
 }

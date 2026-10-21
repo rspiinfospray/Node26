@@ -22,6 +22,8 @@ public class LongTermStrategy {
     private double expectedValue;
     private String tacticalObjective;
     private String nextPriority;
+    private int lastProgressAtRound;
+    private int stagnantEvaluations;
 
     public LongTermStrategy() {
     }
@@ -30,6 +32,7 @@ public class LongTermStrategy {
         this.type = type;
         this.startedAtRound = currentRound;
         this.lastEvaluatedAtRound = currentRound;
+        this.lastProgressAtRound = currentRound;
         this.commitmentUntilRound = currentRound + 10;
         this.targetTeamId = targetTeamId;
     }
@@ -51,6 +54,8 @@ public class LongTermStrategy {
     public double getExpectedValue() { return this.expectedValue; }
     public String getTacticalObjective() { return this.tacticalObjective; }
     public String getNextPriority() { return this.nextPriority; }
+    public int getLastProgressAtRound() { return this.lastProgressAtRound; }
+    public int getStagnantEvaluations() { return this.stagnantEvaluations; }
     public void setType(StrategyType value) { this.type = value; }
     public void setStatus(StrategyStatus value) { this.status = value; }
     public void setPhase(StrategicPhase value) { this.phase = value; }
@@ -68,4 +73,6 @@ public class LongTermStrategy {
     public void setExpectedValue(double value) { this.expectedValue = value; }
     public void setTacticalObjective(String value) { this.tacticalObjective = value; }
     public void setNextPriority(String value) { this.nextPriority = value; }
+    public void setLastProgressAtRound(int value) { this.lastProgressAtRound = value; }
+    public void setStagnantEvaluations(int value) { this.stagnantEvaluations = Math.max(0, value); }
 }
