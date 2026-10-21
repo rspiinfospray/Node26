@@ -30,6 +30,40 @@ if ($null -eq $mavenCommand) {
     $mavenPath = $mavenCommand.Source
 }
 
+$configuredCodexPath = $env:AUTOFIX_CODEX_COMMAND
+if ($configuredCodexPath -and (Test-Path -LiteralPath $configuredCodexPath -PathType Leaf)) {
+    $codexPath = (Resolve-Path -LiteralPath $configuredCodexPath).Path
+} else {
+    $codexCommand = Get-Command codex.cmd -ErrorAction SilentlyContinue
+}
+if ($null -eq $codexPath -and $null -eq $codexCommand) {
+    $jetBrainsDirectory = Join-Path $env:LOCALAPPDATA 'JetBrains'
+    $codexPath = Get-ChildItem -LiteralPath $jetBrainsDirectory -Directory -Filter 'IntelliJIdea*' -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $runtimeDirectory = Join-Path $_.FullName 'acp-agents\.runtimes\node'
+            if (Test-Path -LiteralPath $runtimeDirectory) {
+                Get-ChildItem -LiteralPath $runtimeDirectory -Filter 'codex.cmd' -File -Recurse -ErrorAction SilentlyContinue
+            }
+        } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    if ($null -eq $codexPath) {
+        throw 'Codex CLI est introuvable. Installez Codex ou définissez AUTOFIX_CODEX_COMMAND avec le chemin complet de codex.cmd.'
+    }
+} elseif ($null -eq $codexPath) {
+    $codexPath = $codexCommand.Source
+}
+$codexAncestor = (Get-Item -LiteralPath $codexPath).Directory
+while ($null -ne $codexAncestor) {
+    $nodeDirectory = Join-Path $codexAncestor.FullName 'bin'
+    if (Test-Path -LiteralPath (Join-Path $nodeDirectory 'node.exe') -PathType Leaf) {
+        $env:Path = $nodeDirectory + [IO.Path]::PathSeparator + $env:Path
+        break
+    }
+    $codexAncestor = $codexAncestor.Parent
+}
+$env:AUTOFIX_CODEX_COMMAND = $codexPath
+
 if ($Once) {
     $env:AUTOFIX_RUN_ONCE = 'true'
 }

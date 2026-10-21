@@ -28,7 +28,8 @@ public class CodexCliCorrectionAgent implements CodexCorrectionAgent {
         Path output = this.outputDirectory.resolve("codex-cycle-" + cycleNumber + ".md");
         try { Files.createDirectories(this.outputDirectory); Files.deleteIfExists(output); } catch (IOException exception) { throw new IllegalStateException("Impossible de préparer le dossier de sortie Codex", exception); }
         String escapedOutput = output.toString().replace("'", "''");
-        String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & codex.cmd exec --sandbox danger-full-access --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
+        String escapedCodexCommand = this.codexCommand().replace("'", "''");
+        String script = "$prompt=[Console]::In.ReadToEnd(); $prompt | & '" + escapedCodexCommand + "' exec --sandbox danger-full-access --ephemeral --output-last-message '" + escapedOutput + "' -; exit $LASTEXITCODE";
         for (int attempt = 1; attempt <= MAXIMUM_ATTEMPTS; attempt++) {
             Path transcript = this.outputDirectory.resolve("codex-cycle-" + cycleNumber + "-attempt-" + attempt + ".log");
             String processOutput;
@@ -64,6 +65,11 @@ public class CodexCliCorrectionAgent implements CodexCorrectionAgent {
         String normalized = output.strip();
         int start = Math.max(0, normalized.length() - 1000);
         return ". Fin de la sortie Codex: " + normalized.substring(start);
+    }
+
+    private String codexCommand() {
+        String configuredCommand = System.getenv("AUTOFIX_CODEX_COMMAND");
+        return configuredCommand == null || configuredCommand.isBlank() ? "codex.cmd" : configuredCommand;
     }
 
     private String buildPrompt(Path report, int cycleNumber) {
