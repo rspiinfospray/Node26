@@ -435,7 +435,7 @@ function geometryBasis(world) {
     const rawY = [];
     Object.values(world.cells).forEach(cell => {
         const coordinate = cell.coordinate;
-        const point = projectIsometric(1.5 * coordinate.q, Math.sqrt(3) * (coordinate.r + coordinate.q / 2));
+        const point = projectHexGrid(coordinate);
         projectedByCell.set(`${coordinate.q}:${coordinate.r}`, point);
         rawX.push(point.x);
         rawY.push(point.y);
@@ -445,9 +445,10 @@ function geometryBasis(world) {
     return basis;
 }
 
-function projectIsometric(x, y) { const axialScale = 1 / Math.sqrt(3); return { x:x - y * axialScale, y:(x * axialScale + y) * .68 }; }
-function centerOf(coordinate, geo) { const point = geo.projectedByCell.get(`${coordinate.q}:${coordinate.r}`) || projectIsometric(1.5 * coordinate.q, Math.sqrt(3) * (coordinate.r + coordinate.q / 2)); return { x:geo.offsetX + geo.size * point.x, y:geo.offsetY + geo.size * point.y }; }
-function hexPoints(size) { return Array.from({ length:6 }, (_, index) => { const angle = Math.PI / 3 * index; const point = projectIsometric(Math.cos(angle), Math.sin(angle)); return [size * point.x, size * point.y]; }).flat(); }
+function projectHexGrid(coordinate) { return { x:1.5 * coordinate.q, y:Math.sqrt(3) * (coordinate.r + coordinate.q / 2) }; }
+function centerOf(coordinate, geo) { const point = geo.projectedByCell.get(`${coordinate.q}:${coordinate.r}`) || projectHexGrid(coordinate); return { x:geo.offsetX + geo.size * point.x, y:geo.offsetY + geo.size * point.y }; }
+function hexPoints(size) { return Array.from({ length:6 }, (_, index) => { const angle = Math.PI / 3 * index; return [size * Math.cos(angle), size * Math.sin(angle)]; }).flat(); }
+function orientPointyTileTexture(sprite, radius, overscan = 1.08) { sprite.anchor.set(.5); sprite.rotation = -Math.PI / 6; sprite.width = radius * 2 * overscan; sprite.height = radius * 2 * overscan; }
 function objectDepth(point, offset = 0) { return 100000 + point.y + offset; }
 const depthPriority = { terrainFeature:0, construction:1, grave:2, food:3, wood:4, sheep:5, peon:6, effect:20 };
 function drawGroundShadow(point, geo, width, alpha = .26) {
@@ -591,10 +592,7 @@ function drawAgriculturalBuilding(item, geo, texture, quantity, kind) {
     sprite.anchor.set(.5, kind === 'field' ? .5 : .82); sprite.position.set(point.x, point.y + (kind === 'field' ? 0 : geo.size * .2));
     if (kind === 'field') {
         const points = hexPoints(geo.size - .35);
-        const xValues = points.filter((value, index) => index % 2 === 0);
-        const yValues = points.filter((value, index) => index % 2 === 1);
-        sprite.width = (Math.max(...xValues) - Math.min(...xValues)) * 1.08;
-        sprite.height = (Math.max(...yValues) - Math.min(...yValues)) * 1.08;
+        orientPointyTileTexture(sprite, geo.size - .35);
         const mask = new PIXI.Graphics().poly(points).fill('#ffffff');
         mask.position.set(point.x, point.y);
         sprite.mask = mask;
@@ -700,9 +698,7 @@ function drawCell(cell, point, geo, known, cellCoordinates) {
     const base = new PIXI.Graphics().poly(points).fill(known ? (water ? '#3189a8' : '#79a842') : '#0c0f0c');
     const terrainTexture = cell.terrain === 'RIVER' ? assets.river : cell.terrain === 'BRIDGE' ? assets.bridge : assets.grass;
     const texture = new PIXI.Sprite(terrainTexture);
-    const xValues = points.filter((value, index) => index % 2 === 0);
-    const yValues = points.filter((value, index) => index % 2 === 1);
-    texture.anchor.set(.5); texture.width = (Math.max(...xValues) - Math.min(...xValues)) * 1.08; texture.height = (Math.max(...yValues) - Math.min(...yValues)) * 1.08; texture.alpha = known ? .9 : 0;
+    orientPointyTileTexture(texture, geo.size - .35); texture.alpha = known ? .9 : 0;
     const textureMask = new PIXI.Graphics().poly(points).fill('#ffffff');
     texture.mask = textureMask;
     const border = new PIXI.Graphics().poly(points).stroke({ color:known ? '#92a180' : '#151915', alpha:known ? .5 : 1, width:Math.max(.6, geo.size * .025) });
