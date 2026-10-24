@@ -16,7 +16,6 @@ import org.infospray.peonsimulator.application.command.ReplayPeonDecisionCommand
 import org.infospray.peonsimulator.application.command.SummarizePeonDiagnosticCommand;
 import org.infospray.peonsimulator.application.command.GenerateWorldBehaviorReportCommand;
 import org.infospray.peonsimulator.application.command.GetWorldBehaviorReportCommand;
-import org.infospray.peonsimulator.application.command.QueueWorldSupervisionCommand;
 import org.infospray.peonsimulator.application.dto.CreateWorldRequest;
 import org.infospray.peonsimulator.application.dto.EventQuery;
 import org.infospray.peonsimulator.application.dto.PeonDecision;
@@ -62,7 +61,6 @@ public class WorldController {
     private final ReplayPeonDecisionCommand replayPeonDecisionCommand;
     private final GenerateWorldBehaviorReportCommand generateWorldBehaviorReportCommand;
     private final GetWorldBehaviorReportCommand getWorldBehaviorReportCommand;
-    private final QueueWorldSupervisionCommand queueWorldSupervisionCommand;
     private final SimulationEventBroadcaster broadcaster;
 
     public WorldController(
@@ -70,7 +68,7 @@ public class WorldController {
             GetWorldStateCommand getWorldStateCommand, GetWorldTimelineCommand getWorldTimelineCommand, AnalyzeWorldCommand analyzeWorldCommand,
             DeleteAllWorldsCommand deleteAllWorldsCommand, GetPeonDiagnosticCommand getPeonDiagnosticCommand, SummarizePeonDiagnosticCommand summarizePeonDiagnosticCommand,
             GetPeonSurroundingsCommand getPeonSurroundingsCommand, ReplayPeonDecisionCommand replayPeonDecisionCommand, GenerateWorldBehaviorReportCommand generateWorldBehaviorReportCommand,
-            GetWorldBehaviorReportCommand getWorldBehaviorReportCommand, QueueWorldSupervisionCommand queueWorldSupervisionCommand, SimulationEventBroadcaster broadcaster) {
+            GetWorldBehaviorReportCommand getWorldBehaviorReportCommand, SimulationEventBroadcaster broadcaster) {
         this.illuvatar = illuvatar;
         this.createWorldCommand = createWorldCommand;
         this.advanceWorldTurnCommand = advanceWorldTurnCommand;
@@ -85,7 +83,6 @@ public class WorldController {
         this.replayPeonDecisionCommand = replayPeonDecisionCommand;
         this.generateWorldBehaviorReportCommand = generateWorldBehaviorReportCommand;
         this.getWorldBehaviorReportCommand = getWorldBehaviorReportCommand;
-        this.queueWorldSupervisionCommand = queueWorldSupervisionCommand;
         this.broadcaster = broadcaster;
     }
 
@@ -140,12 +137,6 @@ public class WorldController {
 
     @PostMapping("/{worldId}/behavior-report")
     public WorldBehaviorReportStatus generateBehaviorReport(@PathVariable UUID worldId) { return this.generateWorldBehaviorReportCommand.execute(worldId); }
-
-    @PostMapping("/{worldId}/supervision")
-    public WorldBehaviorReportStatus startSupervision(@PathVariable UUID worldId) {
-        this.generateWorldBehaviorReportCommand.execute(worldId);
-        return this.queueWorldSupervisionCommand.execute(worldId);
-    }
 
     @GetMapping("/{worldId}/peons/{peonId}/mental-map")
     public Map<String, RememberedCell> mentalMap(@PathVariable UUID worldId, @PathVariable UUID peonId, @RequestParam(required = false) Long sequence) {

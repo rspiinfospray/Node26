@@ -10,6 +10,5 @@ public interface WorldBehaviorReportRepository {
     void markGenerating(UUID worldId);
     void save(UUID worldId, String worldName, String markdown);
     void markFailed(UUID worldId, String error);
-    void queueForSupervision(UUID worldId);
     Optional<String> read(UUID worldId);
 }

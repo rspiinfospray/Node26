@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,17 +46,6 @@ public class FileWorldBehaviorReportRepository implements WorldBehaviorReportRep
 
     @Override
     public void markFailed(UUID worldId, String error) { this.transientStatuses.put(worldId, new WorldBehaviorReportStatus(worldId, WorldBehaviorReportStatus.Status.FAILED, null, null, error)); }
-
-    @Override
-    public void queueForSupervision(UUID worldId) {
-        Path report = this.findReport(worldId).orElseThrow(() -> new IllegalStateException("Aucun rapport n'est disponible pour ce monde"));
-        Path stateDirectory = this.directory.resolve("autofix-state");
-        try {
-            Files.deleteIfExists(stateDirectory.resolve(report.getFileName().toString() + ".completed"));
-            Files.deleteIfExists(stateDirectory.resolve(report.getFileName().toString() + ".failed"));
-            Files.setLastModifiedTime(report, FileTime.from(Instant.now()));
-        } catch (IOException exception) { throw new IllegalStateException("Impossible de placer le rapport dans la file du superviseur", exception); }
-    }
 
     @Override
     public Optional<String> read(UUID worldId) {

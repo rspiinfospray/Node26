@@ -52,7 +52,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6.1-sol}
       WORLD_REPORTS_DIRECTORY: /app/reports
     volumes:
-      - ./reports:/app/reports
+      - node26-reports:/app/reports
     ports:
       - "8080:8080"
     depends_on:
@@ -63,3 +63,4 @@ services:
 
 volumes:
   peon-postgres:
+  node26-reports:
