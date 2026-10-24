@@ -14,16 +14,12 @@ import org.infospray.peonsimulator.application.command.GetPeonDiagnosticCommand;
 import org.infospray.peonsimulator.application.command.GetPeonSurroundingsCommand;
 import org.infospray.peonsimulator.application.command.ReplayPeonDecisionCommand;
 import org.infospray.peonsimulator.application.command.SummarizePeonDiagnosticCommand;
-import org.infospray.peonsimulator.application.command.GenerateWorldBehaviorReportCommand;
-import org.infospray.peonsimulator.application.command.GetWorldBehaviorReportCommand;
 import org.infospray.peonsimulator.application.dto.CreateWorldRequest;
 import org.infospray.peonsimulator.application.dto.EventQuery;
 import org.infospray.peonsimulator.application.dto.PeonDecision;
 import org.infospray.peonsimulator.application.dto.PeonDiagnosticResponse;
 import org.infospray.peonsimulator.application.dto.PeonDiagnosticSummary;
 import org.infospray.peonsimulator.application.dto.WorldAnalysisResponse;
-import org.infospray.peonsimulator.application.dto.WorldBehaviorReportResponse;
-import org.infospray.peonsimulator.application.dto.WorldBehaviorReportStatus;
 import org.infospray.peonsimulator.domain.event.SimulationEvent;
 import org.infospray.peonsimulator.domain.model.RememberedCell;
 import org.infospray.peonsimulator.domain.model.World;
@@ -59,16 +55,13 @@ public class WorldController {
     private final SummarizePeonDiagnosticCommand summarizePeonDiagnosticCommand;
     private final GetPeonSurroundingsCommand getPeonSurroundingsCommand;
     private final ReplayPeonDecisionCommand replayPeonDecisionCommand;
-    private final GenerateWorldBehaviorReportCommand generateWorldBehaviorReportCommand;
-    private final GetWorldBehaviorReportCommand getWorldBehaviorReportCommand;
     private final SimulationEventBroadcaster broadcaster;
 
     public WorldController(
             Illuvatar illuvatar, CreateWorldCommand createWorldCommand, AdvanceWorldTurnCommand advanceWorldTurnCommand, ChangeWorldStatusCommand changeWorldStatusCommand,
             GetWorldStateCommand getWorldStateCommand, GetWorldTimelineCommand getWorldTimelineCommand, AnalyzeWorldCommand analyzeWorldCommand,
             DeleteAllWorldsCommand deleteAllWorldsCommand, GetPeonDiagnosticCommand getPeonDiagnosticCommand, SummarizePeonDiagnosticCommand summarizePeonDiagnosticCommand,
-            GetPeonSurroundingsCommand getPeonSurroundingsCommand, ReplayPeonDecisionCommand replayPeonDecisionCommand, GenerateWorldBehaviorReportCommand generateWorldBehaviorReportCommand,
-            GetWorldBehaviorReportCommand getWorldBehaviorReportCommand, SimulationEventBroadcaster broadcaster) {
+            GetPeonSurroundingsCommand getPeonSurroundingsCommand, ReplayPeonDecisionCommand replayPeonDecisionCommand, SimulationEventBroadcaster broadcaster) {
         this.illuvatar = illuvatar;
         this.createWorldCommand = createWorldCommand;
         this.advanceWorldTurnCommand = advanceWorldTurnCommand;
@@ -81,8 +74,6 @@ public class WorldController {
         this.summarizePeonDiagnosticCommand = summarizePeonDiagnosticCommand;
         this.getPeonSurroundingsCommand = getPeonSurroundingsCommand;
         this.replayPeonDecisionCommand = replayPeonDecisionCommand;
-        this.generateWorldBehaviorReportCommand = generateWorldBehaviorReportCommand;
-        this.getWorldBehaviorReportCommand = getWorldBehaviorReportCommand;
         this.broadcaster = broadcaster;
     }
 
@@ -131,12 +122,6 @@ public class WorldController {
 
     @GetMapping("/{worldId}/analysis")
     public WorldAnalysisResponse analysis(@PathVariable UUID worldId) { return this.analyzeWorldCommand.execute(worldId); }
-
-    @GetMapping("/{worldId}/behavior-report")
-    public WorldBehaviorReportResponse behaviorReport(@PathVariable UUID worldId) { return this.getWorldBehaviorReportCommand.execute(worldId); }
-
-    @PostMapping("/{worldId}/behavior-report")
-    public WorldBehaviorReportStatus generateBehaviorReport(@PathVariable UUID worldId) { return this.generateWorldBehaviorReportCommand.execute(worldId); }
 
     @GetMapping("/{worldId}/peons/{peonId}/mental-map")
     public Map<String, RememberedCell> mentalMap(@PathVariable UUID worldId, @PathVariable UUID peonId, @RequestParam(required = false) Long sequence) {
