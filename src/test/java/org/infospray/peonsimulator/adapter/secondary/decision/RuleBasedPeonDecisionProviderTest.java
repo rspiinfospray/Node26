@@ -26,14 +26,37 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RuleBasedPeonDecisionProviderTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {20, 65})
+    void shouldPrioritizePersonalFoodWithoutAKnownFoodDestination(int health) {
+        ActionKnowledge idle = new ActionKnowledge();
+        idle.setExpectedReward(10000);
+        PeonDecisionContext context = new PeonDecisionContext(UUID.fromString("00000000-0000-0000-0000-000000000001"), UUID.fromString("00000000-0000-0000-0000-000000000002"), health, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), new java.util.HashMap<>(), Map.of(), List.of(), 0, List.of(), 10, 9, TerrainType.PLAIN, 0, 0, 30, 0, false, null, List.of(), 0, 0, 0, List.of(), null, null, List.of(), List.of(), false, false, 1, null);
+        String personalKey = this.provider.decide(context).situationKey();
+        context.learnedActions().put(personalKey + "|NE_RIEN_FAIRE", idle);
+        assertThat(this.provider.decide(context).action().type()).isEqualTo(ActionType.MANGER_RESERVE);
+    }
+
     @Test
-    void shouldKeepAHealthReserveWhenNoSurvivalDestinationExists() {
+    void shouldPrioritizeFoodRequestOverLearnedInactionAtLowHealth() {
+        UUID teamId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        PeonDecisionContext.ObservedPeon ally = new PeonDecisionContext.ObservedPeon(UUID.fromString("00000000-0000-0000-0000-000000000003"), teamId, 100, 100, 1, 0, 50);
+        Map<String, ActionKnowledge> learning = new java.util.HashMap<>();
+        PeonDecisionContext context = new PeonDecisionContext(UUID.fromString("00000000-0000-0000-0000-000000000001"), teamId, 20, 100, 0, 1, new HexCoordinate(2, 2), false, 10, 42, new PeonPersonality(50, 50, 50, 50), learning, Map.of(), List.of(ally), 0, List.of(), 10, 9);
+        ActionKnowledge idle = new ActionKnowledge();
+        idle.setExpectedReward(10000);
+        learning.put(this.provider.decide(context).situationKey() + "|NE_RIEN_FAIRE", idle);
+        assertThat(this.provider.decide(context).action().type()).isEqualTo(ActionType.DEMANDER_NOURRITURE);
+    }
+
+    @Test
+    void shouldSearchForFoodWithAHealthReserveWhenNoSurvivalDestinationExists() {
         ActionKnowledge movement = new ActionKnowledge();
         movement.setExpectedReward(200);
         String situation = "PV_CORRECTS:SEUL:NOURRITURE_INCONNUE:MOUTON_INCONNU:AUCUNE_TOMBE_CONNUE:BOIS_INCOMPLET:BUTIN_INCONNU:SANS_ABRI:DECOUVERT";
         PeonDecision decision = this.provider.decide(this.context(50, false, Map.of(situation + "|SE_DEPLACER", movement), Map.of(), List.of(), 0, List.of(new HexCoordinate(3, 2))));
 
-        assertThat(decision.action().type()).isEqualTo(ActionType.NE_RIEN_FAIRE);
+        assertThat(decision.action().type()).isEqualTo(ActionType.SE_DEPLACER);
     }
 
     @Test

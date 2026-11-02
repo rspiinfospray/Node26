@@ -154,6 +154,40 @@ class PeonStrategyPlannerTest {
         assertThat(peon.getLongTermStrategy().getObjectives()).containsEntry("maisons", 0).containsEntry("greniers", 0).containsEntry("champs", 0);
     }
 
+    @Test
+    void shouldReplaceANegativeStrategyEvenBeforeCommitmentExpires() {
+        Fixture fixture = this.agriculturalFixture();
+        LongTermStrategy strategy = new LongTermStrategy(StrategyType.EXPLORER_LE_MONDE, 1, fixture.peon().getTeamId());
+        strategy.setCommitmentUntilRound(100);
+        fixture.world().setCurrentRound(6);
+        fixture.peon().setLongTermStrategy(strategy);
+        for (int index = 0; index < 3; index++) {
+            Peon ally = new Peon(new UUID(1, index), "Explorer", fixture.peon().getTeamId(), new HexCoordinate(0, 0));
+            ally.setLongTermStrategy(new LongTermStrategy(StrategyType.EXPLORER_LE_MONDE, 1, ally.getTeamId()));
+            fixture.world().getPeons().put(ally.getId(), ally);
+        }
+
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+
+        assertThat(fixture.peon().getLongTermStrategy().getType()).isNotEqualTo(StrategyType.EXPLORER_LE_MONDE);
+        assertThat(fixture.peon().getLongTermStrategy().getLastTransitionReason()).contains("négative");
+    }
+
+    @Test
+    void shouldSkipImpassableExplorationTargets() {
+        Fixture fixture = this.agriculturalFixture();
+        fixture.peon().setLongTermStrategy(new LongTermStrategy(StrategyType.EXPLORER_LE_MONDE, 1, fixture.peon().getTeamId()));
+        for (int index = 1; index <= 3; index++) {
+            TerrainType terrain = index == 1 ? TerrainType.ROCK : index == 2 ? TerrainType.RIVER : TerrainType.BRIDGE;
+            HexCoordinate coordinate = new HexCoordinate(index, 0);
+            fixture.peon().getMentalMap().put(World.key(coordinate), new RememberedCell(new Cell(coordinate, terrain, 0), false, 1));
+        }
+
+        this.planner.update(fixture.world(), fixture.peon(), this.defaults);
+
+        assertThat(fixture.peon().getLongTermStrategy().getTargetArea()).isEqualTo(new HexCoordinate(3, 0));
+    }
+
     private Fixture agriculturalFixture() {
         UUID teamId = UUID.randomUUID();
         Peon peon = new Peon(UUID.randomUUID(), "Aldric", teamId, new HexCoordinate(0, 0));

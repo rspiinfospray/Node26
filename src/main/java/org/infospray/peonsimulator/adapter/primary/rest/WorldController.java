@@ -9,17 +9,25 @@ import org.infospray.peonsimulator.application.command.ChangeWorldStatusCommand;
 import org.infospray.peonsimulator.application.command.CreateWorldCommand;
 import org.infospray.peonsimulator.application.command.DeleteAllWorldsCommand;
 import org.infospray.peonsimulator.application.command.GetWorldStateCommand;
+import org.infospray.peonsimulator.application.command.GetWorldSummariesCommand;
 import org.infospray.peonsimulator.application.command.GetWorldTimelineCommand;
 import org.infospray.peonsimulator.application.command.GetPeonDiagnosticCommand;
+import org.infospray.peonsimulator.application.command.GetPeonDeathContextCommand;
 import org.infospray.peonsimulator.application.command.GetPeonSurroundingsCommand;
+import org.infospray.peonsimulator.application.command.GetWorldPeonsCommand;
+import org.infospray.peonsimulator.application.command.GetWorldAnalysisContextCommand;
 import org.infospray.peonsimulator.application.command.ReplayPeonDecisionCommand;
 import org.infospray.peonsimulator.application.command.SummarizePeonDiagnosticCommand;
 import org.infospray.peonsimulator.application.dto.CreateWorldRequest;
 import org.infospray.peonsimulator.application.dto.EventQuery;
 import org.infospray.peonsimulator.application.dto.PeonDecision;
+import org.infospray.peonsimulator.application.dto.PeonDeathContextResponse;
 import org.infospray.peonsimulator.application.dto.PeonDiagnosticResponse;
 import org.infospray.peonsimulator.application.dto.PeonDiagnosticSummary;
+import org.infospray.peonsimulator.application.dto.PeonSummaryResponse;
 import org.infospray.peonsimulator.application.dto.WorldAnalysisResponse;
+import org.infospray.peonsimulator.application.dto.WorldAnalysisContextResponse;
+import org.infospray.peonsimulator.application.dto.WorldSummaryResponse;
 import org.infospray.peonsimulator.domain.event.SimulationEvent;
 import org.infospray.peonsimulator.domain.model.RememberedCell;
 import org.infospray.peonsimulator.domain.model.World;
@@ -48,31 +56,39 @@ public class WorldController {
     private final AdvanceWorldTurnCommand advanceWorldTurnCommand;
     private final ChangeWorldStatusCommand changeWorldStatusCommand;
     private final GetWorldStateCommand getWorldStateCommand;
+    private final GetWorldAnalysisContextCommand getWorldAnalysisContextCommand;
+    private final GetWorldSummariesCommand getWorldSummariesCommand;
     private final GetWorldTimelineCommand getWorldTimelineCommand;
     private final AnalyzeWorldCommand analyzeWorldCommand;
     private final DeleteAllWorldsCommand deleteAllWorldsCommand;
     private final GetPeonDiagnosticCommand getPeonDiagnosticCommand;
+    private final GetPeonDeathContextCommand getPeonDeathContextCommand;
     private final SummarizePeonDiagnosticCommand summarizePeonDiagnosticCommand;
     private final GetPeonSurroundingsCommand getPeonSurroundingsCommand;
+    private final GetWorldPeonsCommand getWorldPeonsCommand;
     private final ReplayPeonDecisionCommand replayPeonDecisionCommand;
     private final SimulationEventBroadcaster broadcaster;
 
     public WorldController(
             Illuvatar illuvatar, CreateWorldCommand createWorldCommand, AdvanceWorldTurnCommand advanceWorldTurnCommand, ChangeWorldStatusCommand changeWorldStatusCommand,
-            GetWorldStateCommand getWorldStateCommand, GetWorldTimelineCommand getWorldTimelineCommand, AnalyzeWorldCommand analyzeWorldCommand,
-            DeleteAllWorldsCommand deleteAllWorldsCommand, GetPeonDiagnosticCommand getPeonDiagnosticCommand, SummarizePeonDiagnosticCommand summarizePeonDiagnosticCommand,
-            GetPeonSurroundingsCommand getPeonSurroundingsCommand, ReplayPeonDecisionCommand replayPeonDecisionCommand, SimulationEventBroadcaster broadcaster) {
+            GetWorldStateCommand getWorldStateCommand, GetWorldAnalysisContextCommand getWorldAnalysisContextCommand, GetWorldSummariesCommand getWorldSummariesCommand, GetWorldTimelineCommand getWorldTimelineCommand, AnalyzeWorldCommand analyzeWorldCommand,
+            DeleteAllWorldsCommand deleteAllWorldsCommand, GetPeonDiagnosticCommand getPeonDiagnosticCommand, GetPeonDeathContextCommand getPeonDeathContextCommand, SummarizePeonDiagnosticCommand summarizePeonDiagnosticCommand,
+            GetPeonSurroundingsCommand getPeonSurroundingsCommand, GetWorldPeonsCommand getWorldPeonsCommand, ReplayPeonDecisionCommand replayPeonDecisionCommand, SimulationEventBroadcaster broadcaster) {
         this.illuvatar = illuvatar;
         this.createWorldCommand = createWorldCommand;
         this.advanceWorldTurnCommand = advanceWorldTurnCommand;
         this.changeWorldStatusCommand = changeWorldStatusCommand;
         this.getWorldStateCommand = getWorldStateCommand;
+        this.getWorldAnalysisContextCommand = getWorldAnalysisContextCommand;
+        this.getWorldSummariesCommand = getWorldSummariesCommand;
         this.getWorldTimelineCommand = getWorldTimelineCommand;
         this.analyzeWorldCommand = analyzeWorldCommand;
         this.deleteAllWorldsCommand = deleteAllWorldsCommand;
         this.getPeonDiagnosticCommand = getPeonDiagnosticCommand;
+        this.getPeonDeathContextCommand = getPeonDeathContextCommand;
         this.summarizePeonDiagnosticCommand = summarizePeonDiagnosticCommand;
         this.getPeonSurroundingsCommand = getPeonSurroundingsCommand;
+        this.getWorldPeonsCommand = getWorldPeonsCommand;
         this.replayPeonDecisionCommand = replayPeonDecisionCommand;
         this.broadcaster = broadcaster;
     }
@@ -82,6 +98,9 @@ public class WorldController {
 
     @GetMapping
     public List<World> list() { return this.illuvatar.getWorlds(); }
+
+    @GetMapping("/summary")
+    public List<WorldSummaryResponse> summaries() { return this.getWorldSummariesCommand.execute(); }
 
     @GetMapping("/diagnostics/peon")
     public PeonDiagnosticResponse diagnosticByName(@RequestParam String world, @RequestParam String peon, @RequestParam(required = false) Integer fromRound, @RequestParam(required = false) Integer toRound) {
@@ -105,11 +124,17 @@ public class WorldController {
     @PostMapping("/{worldId}/step")
     public World step(@PathVariable UUID worldId) { return this.advanceWorldTurnCommand.execute(worldId, true); }
 
+    @GetMapping("/{worldId}/peons")
+    public List<PeonSummaryResponse> peons(@PathVariable UUID worldId) { return this.getWorldPeonsCommand.execute(worldId); }
+
     @GetMapping("/{worldId}/events")
     public List<SimulationEvent> events(@PathVariable UUID worldId, @RequestParam(defaultValue = "0") long after, @RequestParam(defaultValue = "500") int limit, @RequestParam(required = false) UUID peonId, @RequestParam(required = false) Integer fromRound, @RequestParam(required = false) Integer toRound, @RequestParam(required = false) Set<String> types) { return this.getWorldTimelineCommand.execute(new EventQuery(worldId, after, limit, peonId, fromRound, toRound, types)); }
 
     @GetMapping("/{worldId}/peons/{peonId}/diagnostic")
     public PeonDiagnosticResponse diagnostic(@PathVariable UUID worldId, @PathVariable UUID peonId, @RequestParam(required = false) Integer fromRound, @RequestParam(required = false) Integer toRound) { return this.getPeonDiagnosticCommand.execute(worldId, peonId, fromRound, toRound); }
+
+    @GetMapping("/{worldId}/peons/{peonId}/death-context")
+    public PeonDeathContextResponse deathContext(@PathVariable UUID worldId, @PathVariable UUID peonId, @RequestParam(defaultValue = "20") int sequenceLimit) { return this.getPeonDeathContextCommand.execute(worldId, peonId, sequenceLimit); }
 
     @GetMapping("/{worldId}/peons/{peonId}/diagnostic/summary")
     public PeonDiagnosticSummary diagnosticSummary(@PathVariable UUID worldId, @PathVariable UUID peonId, @RequestParam(required = false) Integer fromRound, @RequestParam(required = false) Integer toRound) { return this.summarizePeonDiagnosticCommand.execute(worldId, peonId, fromRound, toRound); }
@@ -122,6 +147,9 @@ public class WorldController {
 
     @GetMapping("/{worldId}/analysis")
     public WorldAnalysisResponse analysis(@PathVariable UUID worldId) { return this.analyzeWorldCommand.execute(worldId); }
+
+    @GetMapping("/{worldId}/analysis-context")
+    public WorldAnalysisContextResponse analysisContext(@PathVariable UUID worldId) { return this.getWorldAnalysisContextCommand.execute(worldId); }
 
     @GetMapping("/{worldId}/peons/{peonId}/mental-map")
     public Map<String, RememberedCell> mentalMap(@PathVariable UUID worldId, @PathVariable UUID peonId, @RequestParam(required = false) Long sequence) {

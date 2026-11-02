@@ -27,7 +27,7 @@ public class SummarizePeonDiagnosticCommand {
         List<PeonDiagnosticSummary.Anomaly> anomalies = new ArrayList<>();
         this.detectRepeatedCriticalActions(turns, anomalies);
         this.detectOscillation(turns, anomalies);
-        turns.stream().filter(turn -> turn.outcomes().stream().anyMatch(outcome -> outcome.get("eventType").equals("PEON_DIED"))).forEach(turn -> anomalies.add(new PeonDiagnosticSummary.Anomaly("DEATH", List.of(turn.round()), Map.of("sequence", turn.sequence()))));
+        events.stream().filter(event -> event.eventType().equals("PEON_DIED")).forEach(event -> anomalies.add(new PeonDiagnosticSummary.Anomaly("DEATH", List.of(event.roundNumber()), Map.of("sequence", event.sequenceNumber()))));
         return new PeonDiagnosticSummary(worldId, peonId, anomalies);
     }
 

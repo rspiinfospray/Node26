@@ -30,17 +30,18 @@ public class PeonStrategyPlanner {
         boolean fullEvaluation = current == null || world.getCurrentRound() - current.getLastEvaluatedAtRound() >= REEVALUATION_ROUNDS;
         if (fullEvaluation) {
             boolean stalled = current != null && current.getStagnantEvaluations() >= 2;
-            boolean keepCurrent = current != null && current.getStatus() == StrategyStatus.EN_COURS && !stalled;
-            StrategyType excluded = current != null && (stalled || current.getStatus() == StrategyStatus.ACCOMPLIE) ? current.getType() : null;
+            boolean unfavorable = current != null && this.strategyScores(peon, situation, world.getCurrentRound()).get(current.getType()) < 0;
+            boolean keepCurrent = current != null && current.getStatus() == StrategyStatus.EN_COURS && !stalled && !unfavorable;
+            StrategyType excluded = current != null && (stalled || unfavorable || current.getStatus() == StrategyStatus.ACCOMPLIE) ? current.getType() : null;
             StrategyType selected = keepCurrent ? current.getType() : this.selectStrategy(peon, situation, world.getCurrentRound(), excluded);
             if (current == null || selected != current.getType()) {
-                String transitionReason = current == null ? "Sélection initiale selon la personnalité et les besoins du monde" : stalled ? "Réévaluation après deux périodes sans progrès" : "Objectif précédent accompli";
+                String transitionReason = current == null ? "Sélection initiale selon la personnalité et les besoins du monde" : unfavorable ? "Réévaluation après une valeur attendue négative" : stalled ? "Réévaluation après deux périodes sans progrès" : "Objectif précédent accompli";
                 current = new LongTermStrategy(selected, world.getCurrentRound(), peon.getTeamId());
                 current.setLastTransitionReason(transitionReason);
-                current.setCommitmentUntilRound(world.getCurrentRound() + COMMITMENT_ROUNDS);
+                current.setCommitmentUntilRound(Math.min(world.getMaxRounds() > 0 ? world.getMaxRounds() : Integer.MAX_VALUE, world.getCurrentRound() + COMMITMENT_ROUNDS));
                 peon.setLongTermStrategy(current);
             } else if (world.getCurrentRound() >= current.getCommitmentUntilRound()) {
-                current.setCommitmentUntilRound(world.getCurrentRound() + COMMITMENT_ROUNDS);
+                current.setCommitmentUntilRound(Math.min(world.getMaxRounds() > 0 ? world.getMaxRounds() : Integer.MAX_VALUE, world.getCurrentRound() + COMMITMENT_ROUNDS));
             }
             current.setExpectedValue(this.strategyScores(peon, situation, world.getCurrentRound()).get(selected));
             current.setLastEvaluatedAtRound(world.getCurrentRound());
@@ -54,7 +55,7 @@ public class PeonStrategyPlanner {
         } else if (fullEvaluation) {
             current.setStagnantEvaluations(current.getStagnantEvaluations() + 1);
         }
-        if (current.getPhase() != previousPhase) { current.setTacticalUntilRound(world.getCurrentRound() + 5); }
+        if (current.getPhase() != previousPhase) { current.setTacticalUntilRound(Math.min(world.getMaxRounds() > 0 ? world.getMaxRounds() : Integer.MAX_VALUE, world.getCurrentRound() + 5)); }
         return fullEvaluation;
     }
 
@@ -65,7 +66,7 @@ public class PeonStrategyPlanner {
         List<WheatField> fields = world.getWheatFields().values().stream().filter(field -> field.getTeamId().equals(peon.getTeamId())).toList();
         int storedWheat = granaries.stream().mapToInt(Granary::getWheatQuantity).sum();
         int targetFields = Math.max(3, (int) Math.ceil(allies.size() / 2.0) + 1);
-        int safetyStock = Math.max(allies.size(), (int) Math.ceil(allies.size() * defaults.getHungerHealthLossPerTurn() * 12.0 / defaults.getWheatHealthGain()));
+        int safetyStock = Math.max(allies.size(), (int) Math.ceil(allies.size() * (world.getHungerHealthLossPerTurn() > 0 ? world.getHungerHealthLossPerTurn() : defaults.getHungerHealthLossPerTurn()) * 12.0 / defaults.getWheatHealthGain()));
         List<RememberedPeonObservation> knownEnemies = peon.getMentalMap().values().stream().flatMap(memory -> memory.getRememberedPeons().stream()).filter(observation -> !observation.teamId().equals(peon.getTeamId())).toList();
         double exploredPercentage = world.getCells().isEmpty() ? 100 : peon.getMentalMap().size() * 100.0 / world.getCells().size();
         Map<StrategyType, Long> assignments = new EnumMap<>(StrategyType.class);
@@ -159,7 +160,7 @@ public class PeonStrategyPlanner {
         strategy.setPhase(situation.exploredPercentage() < 40 ? StrategicPhase.REJOINDRE_LA_FRONTIERE : StrategicPhase.CARTOGRAPHIER_LA_REGION);
         strategy.setTacticalObjective("Cartographier les zones inconnues");
         strategy.setNextPriority("Se déplacer vers une case connue non visitée puis observer");
-        strategy.setTargetArea(peon.getMentalMap().values().stream().filter(cell -> !cell.isVisited()).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(peon.getPosition()))).map(org.infospray.peonsimulator.domain.model.RememberedCell::getCoordinate).orElse(peon.getPosition()));
+        strategy.setTargetArea(peon.getMentalMap().values().stream().filter(cell -> !cell.isVisited()).filter(cell -> cell.getTerrain() != org.infospray.peonsimulator.domain.model.TerrainType.ROCK && cell.getTerrain() != org.infospray.peonsimulator.domain.model.TerrainType.RIVER).min(Comparator.comparingInt(cell -> cell.getCoordinate().distanceTo(peon.getPosition()))).map(org.infospray.peonsimulator.domain.model.RememberedCell::getCoordinate).orElse(peon.getPosition()));
         strategy.setProgress(Math.min(100, situation.exploredPercentage() / 80.0 * 100));
         if (situation.exploredPercentage() >= 80) { strategy.setStatus(StrategyStatus.ACCOMPLIE); }
     }

@@ -28,7 +28,13 @@ public class GetPeonDiagnosticCommand {
         if (peon == null) { throw new IllegalArgumentException("Peon introuvable: " + peonId); }
         List<SimulationEvent> events = this.eventRepository.find(new EventQuery(worldId, 0, 2000, peonId, fromRound, toRound, Set.of()));
         Map<Long, List<SimulationEvent>> eventsBySequence = events.stream().collect(Collectors.groupingBy(SimulationEvent::sequenceNumber));
-        List<PeonDiagnosticResponse.Turn> turns = events.stream().filter(event -> event.eventType().equals("PEON_DECISION_MADE")).map(decision -> this.turn(decision, eventsBySequence.getOrDefault(decision.sequenceNumber(), List.of()))).toList();
+        List<PeonDiagnosticResponse.Turn> turns = eventsBySequence.entrySet().stream().filter(entry -> entry.getValue().stream().anyMatch(event -> event.eventType().equals("PEON_DECISION_MADE") || event.eventType().equals("PEON_DIED"))).sorted(Map.Entry.comparingByKey()).map(entry -> {
+            SimulationEvent decision = entry.getValue().stream().filter(event -> event.eventType().equals("PEON_DECISION_MADE")).findFirst().orElse(null);
+            if (decision != null) { return this.turn(decision, entry.getValue()); }
+            SimulationEvent first = entry.getValue().getFirst();
+            List<Map<String, Object>> outcomes = entry.getValue().stream().map(event -> Map.<String, Object>of("eventType", event.eventType(), "payload", event.payload())).toList();
+            return new PeonDiagnosticResponse.Turn(first.roundNumber(), first.sequenceNumber(), Map.of(), outcomes);
+        }).toList();
         return new PeonDiagnosticResponse(worldId, world.getName(), peonId, peon.getFirstName(), turns);
     }
 

@@ -1,4 +1,4 @@
-const state = { worlds: [], world: null, liveWorld: null, liveWorldNeedsResync: false, mentalMapsStale: false, lastCompletedSequence: 0, events: [], viewedRound: null, selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, selectedFieldId: null, selectedFoodKey: null, source: null, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
+const state = { worlds: [], world: null, liveWorld: null, liveWorldNeedsResync: false, mentalMapsStale: false, lastCompletedSequence: 0, events: [], viewedRound: null, selectedPeonId: null, selectedHouseId: null, selectedGranaryId: null, selectedFieldId: null, selectedFoodKey: null, source: null, streamWatchdog: null, streamLastEventAt: 0, streamSyncPromise: null, streamGeneration: 0, timelineTimer: null, historical: false, defaults: null, simulationSpeed: null, defaultZoom: 1.7, zoom: 1.7, panX: 0, panY: 0, dragging: false, dragStart: null, dragMoved: false };
 const $ = selector => document.querySelector(selector);
 const viewport = $('#worldViewport');
 const pixiApp = new PIXI.Application();
@@ -179,8 +179,12 @@ async function selectWorld(worldId) {
 }
 
 function connectStream(worldId) {
+    const generation = state.streamGeneration;
+    state.streamLastEventAt = Date.now();
     state.source = new EventSource(`/api/worlds/${worldId}/stream`);
     state.source.addEventListener('simulation-event', async event => {
+        if (generation !== state.streamGeneration || state.liveWorld?.id !== worldId) return;
+        state.streamLastEventAt = Date.now();
         const data = JSON.parse(event.data);
         state.events.push(data);
         if (state.events.length > 2000) state.events.shift();
@@ -188,15 +192,28 @@ function connectStream(worldId) {
         if (!state.liveWorldNeedsResync) applyWorldEvent(state.liveWorld, data);
         if (['PEON_TURN_COMPLETED', 'WORLD_FINISHED'].includes(data.eventType)) {
             if (state.liveWorldNeedsResync) await resynchronizeLiveWorld(worldId);
+            if (generation !== state.streamGeneration || state.liveWorld?.id !== worldId) return;
             if (data.eventType === 'PEON_TURN_COMPLETED') state.lastCompletedSequence = data.sequenceNumber;
             const actionEvents = state.events.filter(item => item.sequenceNumber === data.sequenceNumber);
-            const completedRound = Math.min(...actionEvents.map(item => Number(item.roundNumber)));
-            const roundCompleted = data.eventType === 'PEON_TURN_COMPLETED' && Number(data.roundNumber) > completedRound;
-            if (!state.historical && (roundCompleted || data.eventType === 'WORLD_FINISHED')) { state.world = state.liveWorld; render(); }
-            if (!state.historical && roundCompleted) enqueueActionAnimations(state.events.filter(item => item.roundNumber === completedRound));
+            if (!state.historical) { state.world = state.liveWorld; render(); }
+            if (!state.historical && data.eventType === 'PEON_TURN_COMPLETED') enqueueActionAnimations(actionEvents);
             return;
         }
     });
+    state.source.addEventListener('error', () => { void recoverLiveStream(worldId, generation); });
+    state.streamWatchdog = window.setInterval(() => {
+        const expectedDelay = Math.max(5000, Number(state.simulationSpeed?.delayMilliseconds || 0) * 4);
+        if (state.liveWorld?.status === 'RUNNING' && Date.now() - state.streamLastEventAt > expectedDelay) void recoverLiveStream(worldId, generation);
+    }, 2000);
+}
+
+async function recoverLiveStream(worldId, generation) {
+    if (generation !== state.streamGeneration || state.liveWorld?.id !== worldId || state.streamSyncPromise) return;
+    state.streamSyncPromise = resynchronizeLiveWorld(worldId).then(() => {
+        if (generation === state.streamGeneration && state.liveWorld?.id === worldId && !state.historical) { state.world = state.liveWorld; render(); }
+        state.streamLastEventAt = Date.now();
+    }).catch(error => console.warn('Resynchronisation du monde impossible', error)).finally(() => { state.streamSyncPromise = null; });
+    await state.streamSyncPromise;
 }
 
 async function resynchronizeLiveWorld(worldId) {
@@ -260,7 +277,14 @@ function applyWorldEvent(world, event) {
     }
 }
 
-function closeStream() { if (state.source) state.source.close(); state.source = null; }
+function closeStream() {
+    state.streamGeneration += 1;
+    if (state.source) state.source.close();
+    if (state.streamWatchdog) window.clearInterval(state.streamWatchdog);
+    state.source = null;
+    state.streamWatchdog = null;
+    state.streamSyncPromise = null;
+}
 
 async function changeStatus(action) {
     if (!state.liveWorld) return;
