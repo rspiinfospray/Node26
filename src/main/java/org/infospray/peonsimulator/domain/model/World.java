@@ -10,6 +10,7 @@ import java.util.UUID;
 public class World {
     private UUID id;
     private String name;
+    private String decisionCandidateId = "baseline";
     private WorldStatus status = WorldStatus.CREATED;
     private int width;
     private int height;
@@ -47,6 +48,8 @@ public class World {
     }
 
     public UUID getId() { return this.id; }
+    public String getDecisionCandidateId() { return this.decisionCandidateId; }
+    public void setDecisionCandidateId(String value) { this.decisionCandidateId = value == null ? "baseline" : value; }
     public String getName() { return this.name; }
     public WorldStatus getStatus() { return this.status; }
     public int getWidth() { return this.width; }

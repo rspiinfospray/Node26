@@ -4,7 +4,7 @@ import org.infospray.peonsimulator.application.dto.ActionRequest;
 import org.infospray.peonsimulator.application.port.secondary.ActionRequestPublisher;
 import org.infospray.peonsimulator.application.port.secondary.DomainEventPublisher;
 import org.infospray.peonsimulator.application.port.secondary.EventRepository;
-import org.infospray.peonsimulator.application.port.secondary.PeonDecisionProvider;
+import org.infospray.peonsimulator.application.port.secondary.PeonDecisionResolver;
 import org.infospray.peonsimulator.application.port.secondary.PeonFirstNameCatalog;
 import org.infospray.peonsimulator.application.port.secondary.WorldRepository;
 import org.infospray.peonsimulator.configuration.GameDefaultsProperties;
@@ -74,7 +74,7 @@ class IlluvatarFoodExchangeTest {
         world.getPeons().put(actor.getId(), actor);
         when(worldRepository.findById(worldId)).thenReturn(Optional.of(world));
         when(eventRepository.actionWasProcessed(actionId)).thenReturn(false);
-        Illuvatar illuvatar = new Illuvatar(worldRepository, eventRepository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionProvider.class), mock(PeonFirstNameCatalog.class), new GameDefaultsProperties());
+        Illuvatar illuvatar = new Illuvatar(worldRepository, eventRepository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionResolver.class), mock(PeonFirstNameCatalog.class), new GameDefaultsProperties());
         PeonAction action = new PeonAction(actionType, null, targetPeonId, PeonPurpose.SURVIVRE, "test");
         return new ExchangeFixture(illuvatar, new ActionRequest(actionId, worldId, actor.getId(), 1, action), actor, world);
     }

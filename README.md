@@ -293,6 +293,47 @@ Les messages sont partitionnés par `worldId`. Illuvatar déduplique les demande
 
 ## Structure du code
 
+### Candidats de décision
+
+`POST /api/worlds` accepte `decisionCandidateId`. L'absence du champ ou `null`
+sélectionne exactement `baseline`, le moteur `RuleBasedPeonDecisionProvider`.
+L'identifiant est restitué dans le monde créé, la liste, les lectures courantes
+et historiques et la réponse de `/start`. Il est persisté dans le JSON du monde
+et de ses snapshots ; les anciens JSON sans ce champ utilisent `baseline`.
+Un identifiant inconnu (y compris vide ou de casse différente) produit HTTP 400
+avec `error` explicitant l'identifiant et les candidats disponibles. La création,
+le démarrage et la décision vérifient sa disponibilité avant de poursuivre.
+
+Pour ajouter un candidat compilé avec l'application, créer un composant Spring
+dans `adapter/secondary/decision` implémentant le port `PeonDecisionCandidate` :
+
+```java
+@Component
+public final class GeneratedDecisionCandidate implements PeonDecisionCandidate {
+    @Override
+    public String candidateId() { return "CANDIDATE-8c361e13-f35f-44d4-9142-82179434acdf"; }
+
+    @Override
+    public PeonDecision decide(PeonDecisionContext context) {
+        // Calcul déterministe utilisant le contexte et sa decisionSeed.
+        return new PeonDecision(PeonAction.idle(PeonPurpose.SURVIVRE, "generated"), "idle", 1, false, List.of());
+    }
+}
+```
+
+Utiliser l'identifiant exact `CANDIDATE-<uuid>` attribué au candidat. Aucun candidat
+existant ni le baseline ne doit être modifié pour l'enregistrer. Le registre
+secondaire découvre les composants au démarrage, refuse les doublons et conserve
+une table immuable triée par identifiant, avec résolution exacte. `Illuvatar`
+dépend uniquement du port `PeonDecisionResolver` et sélectionne depuis le monde
+pour chaque tour et rejeu historique, sans activation globale mutable.
+
+Les implémentations doivent être déterministes, thread-safe et ne partager aucun
+état mutable entre mondes. Aucun JAR ni code distant n'est chargé. Conserver la
+même implémentation compilée et la même configuration avec les données de
+l'expérience : l'identifiant persisté ne constitue pas une archive du code.
+Retirer un candidat d'une version empêche le redémarrage des mondes qui l'utilisent.
+
 ```text
 src/main/java/org/infospray/peonsimulator
 ├── domain                  # Modèle et événements métier

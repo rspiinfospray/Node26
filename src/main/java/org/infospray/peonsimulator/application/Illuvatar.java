@@ -7,6 +7,7 @@ import org.infospray.peonsimulator.application.dto.PeonDecision;
 import org.infospray.peonsimulator.application.port.secondary.ActionRequestPublisher;
 import org.infospray.peonsimulator.application.port.secondary.DomainEventPublisher;
 import org.infospray.peonsimulator.application.port.secondary.EventRepository;
+import org.infospray.peonsimulator.application.port.secondary.PeonDecisionResolver;
 import org.infospray.peonsimulator.application.port.secondary.PeonDecisionProvider;
 import org.infospray.peonsimulator.application.port.secondary.PeonFirstNameCatalog;
 import org.infospray.peonsimulator.application.port.secondary.WorldRepository;
@@ -62,24 +63,25 @@ public class Illuvatar {
     private final EventRepository eventRepository;
     private final ActionRequestPublisher actionRequestPublisher;
     private final DomainEventPublisher domainEventPublisher;
-    private final PeonDecisionProvider decisionProvider;
+    private final PeonDecisionResolver decisionResolver;
     private final PeonFirstNameCatalog firstNameCatalog;
     private final GameDefaultsProperties defaults;
     private final PeonStrategyPlanner strategyPlanner = new PeonStrategyPlanner();
     private final Map<UUID, Object> worldLocks = new ConcurrentHashMap<>();
 
-    public Illuvatar(WorldRepository worldRepository, EventRepository eventRepository, ActionRequestPublisher actionRequestPublisher, DomainEventPublisher domainEventPublisher, PeonDecisionProvider decisionProvider, PeonFirstNameCatalog firstNameCatalog, GameDefaultsProperties defaults) {
+    public Illuvatar(WorldRepository worldRepository, EventRepository eventRepository, ActionRequestPublisher actionRequestPublisher, DomainEventPublisher domainEventPublisher, PeonDecisionResolver decisionResolver, PeonFirstNameCatalog firstNameCatalog, GameDefaultsProperties defaults) {
         this.worldRepository = worldRepository;
         this.eventRepository = eventRepository;
         this.actionRequestPublisher = actionRequestPublisher;
         this.domainEventPublisher = domainEventPublisher;
-        this.decisionProvider = decisionProvider;
+        this.decisionResolver = decisionResolver;
         this.firstNameCatalog = firstNameCatalog;
         this.defaults = defaults;
     }
 
     @Transactional
     public synchronized World createWorld(CreateWorldRequest request) {
+        this.decisionResolver.resolve(request.resolvedDecisionCandidateId());
         String requestedName = request.name() == null ? "" : request.name().trim();
         boolean nameAlreadyUsed = !requestedName.isBlank() && this.worldRepository.findAll().stream().map(World::getName).filter(java.util.Objects::nonNull).map(String::trim).anyMatch(requestedName::equalsIgnoreCase);
         if (nameAlreadyUsed) {
@@ -112,6 +114,7 @@ public class Illuvatar {
     public World setStatus(UUID worldId, WorldStatus status) {
         synchronized (this.lockFor(worldId)) {
             World world = this.getWorld(worldId);
+            if (status == WorldStatus.RUNNING) { this.decisionResolver.resolve(world.getDecisionCandidateId()); }
             if (world.getStatus() != WorldStatus.FINISHED) {
                 world.setStatus(status);
                 this.worldRepository.save(world);
@@ -125,13 +128,14 @@ public class Illuvatar {
         synchronized (this.lockFor(worldId)) {
             World world = this.getWorld(worldId);
             if ((!manual && world.getStatus() != WorldStatus.RUNNING) || world.getStatus() == WorldStatus.FINISHED || world.getPendingActionId() != null) { return world; }
+            PeonDecisionProvider decisionProvider = this.decisionResolver.resolve(world.getDecisionCandidateId());
             Peon actor = world.nextActor();
             if (actor == null) { this.worldRepository.save(world); return world; }
             long sequence = world.getSequenceNumber() + 1;
             world.setSequenceNumber(sequence);
             this.strategyPlanner.update(world, actor, this.defaults);
             PeonDecisionContext context = this.buildDecisionContext(world, actor);
-            PeonDecision peonDecision = this.decisionProvider.decide(context);
+            PeonDecision peonDecision = decisionProvider.decide(context);
             PeonAction action = peonDecision.action();
             actor.beginDecision(peonDecision.situationKey(), action.type());
             UUID actionId = UUID.randomUUID();
@@ -214,7 +218,7 @@ public class Illuvatar {
         World world = this.getWorldAtSequence(worldId, Math.max(0, sequenceNumber - 1));
         Peon peon = world.getPeons().get(peonId);
         if (peon == null) { throw new IllegalArgumentException("Peon introuvable: " + peonId); }
-        return this.decisionProvider.decide(this.buildDecisionContext(world, peon));
+        return this.decisionResolver.resolve(world.getDecisionCandidateId()).decide(this.buildDecisionContext(world, peon));
     }
 
     @Transactional
@@ -239,6 +243,7 @@ public class Illuvatar {
         world.setHungerHealthLossPerTurn(request.hungerHealthLossPerTurn() == null ? this.defaults.getHungerHealthLossPerTurn() : request.hungerHealthLossPerTurn());
         world.setMaxRounds(request.maxRounds() == null ? this.defaults.getMaxRounds() : request.maxRounds());
         world.setSeed(request.resolvedSeed());
+        world.setDecisionCandidateId(request.resolvedDecisionCandidateId());
         world.setRiverGenerationEnabled(request.resolvedGenerateRiver());
         return world;
     }

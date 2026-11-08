@@ -10,10 +10,12 @@ import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
-public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(0) @Max(500) Integer sheepCount, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, Boolean generateRiver, @NotEmpty List<@Valid TeamRequest> teams) {
+public record CreateWorldRequest(@Size(max = 80) String name, @Min(5) @Max(150) Integer width, @Min(5) @Max(150) Integer height, @Min(0) @Max(60) Integer rockPercentage, @Min(0) @Max(60) Integer treePercentage, @Min(0) @Max(100) Integer foodCellPercentage, @Min(1) Integer minFoodPerCell, @Min(1) Integer maxFoodPerCell, @Min(0) @Max(500) Integer sheepCount, @Min(1) Integer hungerHealthLossPerTurn, @Min(1) Integer maxRounds, Long seed, Boolean generateRiver, @NotEmpty List<@Valid TeamRequest> teams, String decisionCandidateId) {
     public CreateWorldRequest(String name, Integer width, Integer height, Integer rockPercentage, Integer treePercentage, Integer foodCellPercentage, Integer minFoodPerCell, Integer maxFoodPerCell, Integer sheepCount, Integer hungerHealthLossPerTurn, Integer maxRounds, Long seed, List<TeamRequest> teams) { this(name, width, height, rockPercentage, treePercentage, foodCellPercentage, minFoodPerCell, maxFoodPerCell, sheepCount, hungerHealthLossPerTurn, maxRounds, seed, false, teams); }
+    public CreateWorldRequest(String name, Integer width, Integer height, Integer rockPercentage, Integer treePercentage, Integer foodCellPercentage, Integer minFoodPerCell, Integer maxFoodPerCell, Integer sheepCount, Integer hungerHealthLossPerTurn, Integer maxRounds, Long seed, Boolean generateRiver, List<TeamRequest> teams) { this(name, width, height, rockPercentage, treePercentage, foodCellPercentage, minFoodPerCell, maxFoodPerCell, sheepCount, hungerHealthLossPerTurn, maxRounds, seed, generateRiver, teams, null); }
     public record TeamRequest(@NotBlank String name, @Min(1) @Max(100) int peonCount) {
     }
+    public String resolvedDecisionCandidateId() { return this.decisionCandidateId == null ? "baseline" : this.decisionCandidateId; }
 
     public int resolvedWidth() { return this.width == null ? 50 : this.width; }
     public int resolvedHeight() { return this.height == null ? 50 : this.height; }

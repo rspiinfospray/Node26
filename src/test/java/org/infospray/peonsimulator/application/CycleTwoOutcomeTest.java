@@ -65,7 +65,7 @@ class CycleTwoOutcomeTest {
         EventRepository repository = mock(EventRepository.class);
         List<SimulationEvent> events = new ArrayList<>();
         doAnswer(call -> { events.addAll(call.getArgument(0)); return null; }).when(repository).appendAll(anyList());
-        Illuvatar illuvatar = new Illuvatar(worlds, repository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionProvider.class), mock(PeonFirstNameCatalog.class), new GameDefaultsProperties());
+        Illuvatar illuvatar = new Illuvatar(worlds, repository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionResolver.class), mock(PeonFirstNameCatalog.class), new GameDefaultsProperties());
         PeonAction action = new PeonAction(type, null, partnerId, PeonPurpose.SURVIVRE, "test");
         return new Fixture(illuvatar, world, actor, new ActionRequest(actionId, worldId, actorId, 1, action), events);
     }

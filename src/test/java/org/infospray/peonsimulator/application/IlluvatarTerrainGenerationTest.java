@@ -4,7 +4,7 @@ import org.infospray.peonsimulator.application.dto.CreateWorldRequest;
 import org.infospray.peonsimulator.application.port.secondary.ActionRequestPublisher;
 import org.infospray.peonsimulator.application.port.secondary.DomainEventPublisher;
 import org.infospray.peonsimulator.application.port.secondary.EventRepository;
-import org.infospray.peonsimulator.application.port.secondary.PeonDecisionProvider;
+import org.infospray.peonsimulator.application.port.secondary.PeonDecisionResolver;
 import org.infospray.peonsimulator.application.port.secondary.PeonFirstNameCatalog;
 import org.infospray.peonsimulator.application.port.secondary.WorldRepository;
 import org.infospray.peonsimulator.configuration.GameDefaultsProperties;
@@ -65,7 +65,7 @@ class IlluvatarTerrainGenerationTest {
         when(worldRepository.save(any(World.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(names.size()).thenReturn(1);
         when(names.nameAt(anyInt())).thenReturn("Borin");
-        Illuvatar illuvatar = new Illuvatar(worldRepository, mock(EventRepository.class), mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionProvider.class), names, new GameDefaultsProperties());
+        Illuvatar illuvatar = new Illuvatar(worldRepository, mock(EventRepository.class), mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionResolver.class), names, new GameDefaultsProperties());
         CreateWorldRequest request = new CreateWorldRequest("Amas-" + seed, 50, 50, 15, 20, 0, 1, 1, 0, 5, 10, seed, generateRiver, List.of(new CreateWorldRequest.TeamRequest("Test", 1)));
         return illuvatar.createWorld(request);
     }

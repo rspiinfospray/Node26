@@ -4,7 +4,7 @@ import org.infospray.peonsimulator.application.dto.ActionRequest;
 import org.infospray.peonsimulator.application.port.secondary.ActionRequestPublisher;
 import org.infospray.peonsimulator.application.port.secondary.DomainEventPublisher;
 import org.infospray.peonsimulator.application.port.secondary.EventRepository;
-import org.infospray.peonsimulator.application.port.secondary.PeonDecisionProvider;
+import org.infospray.peonsimulator.application.port.secondary.PeonDecisionResolver;
 import org.infospray.peonsimulator.application.port.secondary.PeonFirstNameCatalog;
 import org.infospray.peonsimulator.application.port.secondary.WorldRepository;
 import org.infospray.peonsimulator.configuration.GameDefaultsProperties;
@@ -81,7 +81,7 @@ class IlluvatarSheepTest {
         world.addCell(cell);
         when(worldRepository.findById(worldId)).thenReturn(Optional.of(world));
         when(eventRepository.actionWasProcessed(actionId)).thenReturn(false);
-        Illuvatar illuvatar = new Illuvatar(worldRepository, eventRepository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionProvider.class), mock(PeonFirstNameCatalog.class), defaults);
+        Illuvatar illuvatar = new Illuvatar(worldRepository, eventRepository, mock(ActionRequestPublisher.class), mock(DomainEventPublisher.class), mock(PeonDecisionResolver.class), mock(PeonFirstNameCatalog.class), defaults);
         PeonAction action = new PeonAction(actionType, null, null, PeonPurpose.SURVIVRE, "test");
         return new SheepFixture(illuvatar, new ActionRequest(actionId, worldId, peon.getId(), 1, action), world, peon, sheep);
     }

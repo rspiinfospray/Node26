@@ -2,7 +2,7 @@ package org.infospray.peonsimulator.adapter.secondary.decision;
 
 import org.infospray.peonsimulator.application.dto.PeonDecision;
 import org.infospray.peonsimulator.application.dto.PeonDecisionContext;
-import org.infospray.peonsimulator.application.port.secondary.PeonDecisionProvider;
+import org.infospray.peonsimulator.application.port.secondary.PeonDecisionCandidate;
 import org.infospray.peonsimulator.configuration.GameDefaultsProperties;
 import org.infospray.peonsimulator.domain.action.PeonAction;
 import org.infospray.peonsimulator.domain.model.ActionKnowledge;
@@ -29,8 +29,11 @@ import java.util.Map;
 import java.util.UUID;
 
 @Component
-public class RuleBasedPeonDecisionProvider implements PeonDecisionProvider {
+public class RuleBasedPeonDecisionProvider implements PeonDecisionCandidate {
     private final GameDefaultsProperties defaults;
+
+    @Override
+    public String candidateId() { return "baseline"; }
 
     public RuleBasedPeonDecisionProvider(GameDefaultsProperties defaults) { this.defaults = defaults; }
 
